@@ -19,8 +19,8 @@
 const GLint sizes[3] = {2, 4, 1};
 const GLvoid *pointers[3] = {(GLvoid *) 0, (GLvoid *) 8, (GLvoid *) 12};
 const GLenum types[3] = {GL_FLOAT, GL_UNSIGNED_BYTE, GL_FLOAT};
-const std::uint8_t colors[2][4] = {{0, 0, 0, 1},
-                                   {1, 0, 0, 1}};
+const std::uint8_t colors[2][4] = {{0, 0, 0, 255},
+                                   {255, 0, 0, 255}};
 
 std::string to_string(std::string_view str) {
     return std::string(str.begin(), str.end());
@@ -345,9 +345,11 @@ int main() try {
                     }
                     break;
                 case SDL_MOUSEBUTTONDOWN:
-                    if (event.button.button == SDL_BUTTON_LEFT)
+                    if (event.button.button == SDL_BUTTON_LEFT) {
                         add_vertex({(float) event.button.x,
-                                               (float) event.button.y});
+                                    (float) event.button.y});
+                        std::cout << event.button.x << " " << event.button.y << "\n";
+                    }
                     else if (event.button.button == SDL_BUTTON_RIGHT)
                         pop_vertex();
                     break;
@@ -382,6 +384,8 @@ int main() try {
         glUniformMatrix4fv(view_location, 1, GL_TRUE, view);
         glUniform1f(time_location, time * 100.f);
         //glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindBuffer(GL_ARRAY_BUFFER, m_buffers[0]);
+        glBufferData(GL_ARRAY_BUFFER, (int) m_polyline.size() * (int) sizeof(vertex), m_polyline.data(), GL_STATIC_DRAW);
 
         glBindVertexArray(m_arrays[0]);
         glUniform1i(check_dist_location, 0);

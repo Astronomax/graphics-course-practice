@@ -17,6 +17,13 @@
 #include <memory>
 #include <random>
 
+const float view[16] = {
+        2.f, 0.f, 0.f, -1.f,
+        0.f, 2.f, 0.f, -1.f,
+        0.f, 0.f, 1.f, 0.f,
+        0.f, 0.f, 0.f, 1.f,
+};
+
 std::string to_string(std::string_view str) {
     return std::string(str.begin(), str.end());
 }
@@ -31,14 +38,10 @@ void glew_fail(std::string_view message, GLenum error) {
 
 const char vertex_shader_source[] =
         R"(#version 330 core
-
 uniform mat4 view;
-
 layout (location = 0) in vec2 in_position;
 layout (location = 1) in vec4 in_color;
-
 out vec4 color;
-
 void main() {
     gl_Position = view * vec4(in_position, 0.0, 1.0);
     color = in_color;
@@ -47,11 +50,8 @@ void main() {
 
 const char fragment_shader_source[] =
         R"(#version 330 core
-
 in vec4 color;
-
 layout (location = 0) out vec4 out_color;
-
 void main() {
     out_color = color;
 }
@@ -100,7 +100,7 @@ struct vertex {
     std::uint8_t color[4];
 };
 
-const int quality = 500;
+const int quality = 50;
 
 int main() try {
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -130,6 +130,7 @@ int main() try {
         throw std::runtime_error("OpenGL 3.3 is not supported");
 
     glClearColor(0.8f, 0.8f, 1.f, 0.f);
+    glLineWidth(2.5f);
 
     auto vertex_shader = create_shader(GL_VERTEX_SHADER, vertex_shader_source);
     auto fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
@@ -159,18 +160,65 @@ int main() try {
 
     std::vector<vertex> vertices((quality + 1) * (quality + 1));
     std::vector<int> indices(6 * (quality + 1) * (quality + 1));
+    std::vector<vertex> line_points(quality * (3 * quality + 2));
+
+    for (int i = 0; i <= quality; i++) {
+        for (int j = 0; j <= quality; j++) {
+            int ind = i * (quality + 1) + j;
+            vertices[ind].position.x = (float) j / (float) quality;
+            vertices[ind].position.y = (float) i / (float) quality;
+        }
+    }
+    for (int i = 0; i < quality; i++) {
+        for (int j = 0; j < quality; j++) {
+            int ind = i * quality + j;
+            indices[ind * 6] = ind + i;
+            indices[ind * 6 + 1] = ind + i + 1;
+            indices[ind * 6 + 2] = ind + i + quality + 1;
+            indices[ind * 6 + 3] = ind + i + quality + 1;
+            indices[ind * 6 + 4] = ind + i + 1;
+            indices[ind * 6 + 5] = ind + i + quality + 2;
+        }
+    }
+    for (int i = 0; i <= quality; i++) {
+        for (int j = 0; j < quality; j++) {
+            int ind = i * quality + j;
+            line_points[ind].position.x = ((float) j + 0.5f) / (float) quality;
+            line_points[ind].position.y = (float) i / (float) quality;
+        }
+    }
+    for (int i = 0; i < quality; i++) {
+        for (int j = 0; j <= quality; j++) {
+            int ind = (quality + 1) * (i + quality) + j;
+            line_points[ind].position.x = (float) j / (float) quality;
+            line_points[ind].position.y = ((float) i + 0.5f) / (float) quality;
+        }
+    }
+    for (int i = 0; i < quality; i++) {
+        for (int j = 0; j < quality; j++) {
+            int ind = quality * (i + 2 * (quality + 1)) + j;
+            line_points[ind].position.x = ((float) j + 0.5f) / (float) quality;
+            line_points[ind].position.y = ((float) i + 0.5f) / (float) quality;
+        }
+    }
+    for (auto &i : line_points) {
+        i.color[0] = i.color[1] = i.color[2] = 0;
+        i.color[3] = 255;
+    }
     GLuint view_location = glGetUniformLocation(program, "view");
 
-    GLuint vbo, ebo, vao;
-    glGenBuffers(1, &vbo);
-    glGenBuffers(1, &ebo);
-    glGenVertexArrays(1, &vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBindVertexArray(vao);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, false, sizeof(vertex), (GLvoid *) 0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, true, sizeof(vertex), (GLvoid *) 8);
+    GLuint vbo[2], ebo[2], vao[2];
+    glGenBuffers(2, vbo);
+    glGenBuffers(2, ebo);
+    glGenVertexArrays(2, vao);
+    for(int i = 0; i < 2; i++) {
+        glBindBuffer(GL_ARRAY_BUFFER, vbo[i]);
+        glBindVertexArray(vao[i]);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, false, sizeof(vertex), (GLvoid *) 0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, true, sizeof(vertex), (GLvoid *) 8);
+    }
 
     auto start_time = std::chrono::high_resolution_clock::now();
     while (true) {
@@ -216,56 +264,82 @@ int main() try {
             if(current_positions[i].second > 1.f)
                 current_positions[i].second = 2.f - current_positions[i].second;
         }
-
+        std::vector<float> f((quality + 1) * (quality + 1));
         for (int i = 0; i <= quality; i++) {
             for (int j = 0; j <= quality; j++) {
                 int ind = i * (quality + 1) + j;
-                vertices[ind].position.x = (float) j / (float) quality;
-                vertices[ind].position.y = (float) i / (float) quality;
-                float color[3] = {0.f, 0.f, 0.f};
                 for (int k = 0; k < N; k++) {
                     float dx = vertices[ind].position.x - current_positions[k].first;
                     float dy = vertices[ind].position.y - current_positions[k].second;
-
-                    for(int q = 0; q < 3; q++)
-                        color[q] += (float)c[k][q] / pow(1.f + exp(20.f * (12.f * sqrt(dx * dx + dy * dy) / sqrt(2.f) - 2.f)), 0.05f);
+                    f[ind] += exp(dx * dx + dy * dy);
                 }
-                for (int k = 0; k < 3; k++)
-                    color[k] /= (float)N;
-                for(int k = 0; k < 3; k++)
-                    vertices[ind].color[k] = (std::uint8_t)color[k];
+                vertices[ind].color[0] = (std::uint8_t) (255.f * (cos(f[ind]) + 1.f) / 2.f);
+                vertices[ind].color[1] = (std::uint8_t) (255.f * (sin(f[ind]) + 1.f) / 2.f);
+                vertices[ind].color[2] = (std::uint8_t) (255.f * (cos(f[ind] + M_PI / 2.f) + 1.f) / 2.f);
                 vertices[ind].color[3] = 255;
             }
         }
 
+        const float step = 0.03f;
+        std::vector<int> line_indices;
         for (int i = 0; i < quality; i++) {
             for (int j = 0; j < quality; j++) {
-                int ind = i * quality + j;
-                indices[ind * 6] = ind + i;
-                indices[ind * 6 + 1] = ind + i + 1;
-                indices[ind * 6 + 2] = ind + i + quality + 1;
-                indices[ind * 6 + 3] = ind + i + quality + 1;
-                indices[ind * 6 + 4] = ind + i + 1;
-                indices[ind * 6 + 5] = ind + i + quality + 2;
+                int corners[3] = { i * (quality + 1) + j + 1,
+                                   i * (quality + 1) + j,
+                                   (i + 1) * (quality + 1) + j };
+                int medians[3] = {
+                        i * quality + j,
+                        (quality + 1) * (i + quality) + j,
+                        quality * (i + 2 * (quality + 1)) + j };
+                for(int k = 0; k < 3; k++) {
+                    if((floor(f[corners[(k + 1) % 3]] / step) - ceil(f[corners[k]] / step) > 0.01f &&
+                        floor(f[corners[(k + 2) % 3]] / step) - ceil(f[corners[k]] / step) > 0.01f) ||
+                       (floor(f[corners[k]] / step) - ceil(f[corners[(k + 1) % 3]] / step) > 0.01f &&
+                        floor(f[corners[k]] / step) - ceil(f[corners[(k + 2) % 3]] / step) > 0.01f)) {
+                        line_indices.push_back(medians[k]);
+                        line_indices.push_back(medians[(k + 2) % 3]);
+                    }
+                }
             }
         }
-
-
-        float view[16] = {
-                2.f, 0.f, 0.f, -1.f,
-                0.f, 2.f, 0.f, -1.f,
-                0.f, 0.f, 1.f, 0.f,
-                0.f, 0.f, 0.f, 1.f,
-        };
-
+        for (int i = 0; i < quality; i++) {
+            for (int j = 0; j < quality; j++) {
+                int corners[3] = { i * (quality + 1) + j + 1,
+                                   (i + 1) * (quality + 1) + j ,
+                                   (i + 1) * (quality + 1) + j + 1};
+                int medians[3] = { quality * (i + 2 * (quality + 1)) + j,
+                                   (i + 1) * quality + j,
+                                   (quality + 1) * (i + quality) + j + 1 };
+                for(int k = 0; k < 3; k++) {
+                    if((floor(f[corners[(k + 1) % 3]] / step) - ceil(f[corners[k]] / step) > 0.01f &&
+                        floor(f[corners[(k + 2) % 3]] / step) - ceil(f[corners[k]] / step) > 0.01f) ||
+                       (floor(f[corners[k]] / step) - ceil(f[corners[(k + 1) % 3]] / step) > 0.01f &&
+                        floor(f[corners[k]] / step) - ceil(f[corners[(k + 2) % 3]] / step) > 0.01f)) {
+                        line_indices.push_back(medians[k]);
+                        line_indices.push_back(medians[(k + 2) % 3]);
+                    }
+                }
+            }
+        }
         glClear(GL_COLOR_BUFFER_BIT);
+
         glUseProgram(program);
         glUniformMatrix4fv(view_location, 1, GL_TRUE, view);
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+
+        glBindVertexArray(vao[0]);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vertex), vertices.data(), GL_STATIC_DRAW);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo[0]);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(std::uint32_t), indices.data(), GL_STATIC_DRAW);
         glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+
+        glBindVertexArray(vao[1]);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
+        glBufferData(GL_ARRAY_BUFFER, line_points.size() * sizeof(vertex), line_points.data(), GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo[1]);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, line_indices.size() * sizeof(std::uint32_t), line_indices.data(), GL_STATIC_DRAW);
+        glDrawElements(GL_LINES, line_indices.size(), GL_UNSIGNED_INT, 0);
+
         SDL_GL_SwapWindow(window);
     }
     SDL_GL_DeleteContext(gl_context);
