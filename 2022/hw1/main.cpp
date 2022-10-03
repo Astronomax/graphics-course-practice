@@ -100,7 +100,8 @@ struct vertex {
     std::uint8_t color[4];
 };
 
-const int quality = 50;
+const int quality = 100;
+const float step = 1.f, eps = 1e-9;
 
 int main() try {
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -146,7 +147,6 @@ int main() try {
     c[1] = {255, 255, 0, 255};
     c[2] = {0, 255, 255, 255};
 
-    std::vector<float> r(N, 0.5f);
     std::vector<std::pair<float, float>> start_positions(N);
     std::vector<std::pair<float, float>> move_vectors(N);
     std::vector<std::pair<float, float>> current_positions(N);
@@ -160,7 +160,6 @@ int main() try {
 
     std::vector<vertex> vertices((quality + 1) * (quality + 1));
     std::vector<int> indices(6 * (quality + 1) * (quality + 1));
-    std::vector<vertex> line_points(quality * (3 * quality + 2));
 
     for (int i = 0; i <= quality; i++) {
         for (int j = 0; j <= quality; j++) {
@@ -180,38 +179,14 @@ int main() try {
             indices[ind * 6 + 5] = ind + i + quality + 2;
         }
     }
-    for (int i = 0; i <= quality; i++) {
-        for (int j = 0; j < quality; j++) {
-            int ind = i * quality + j;
-            line_points[ind].position.x = ((float) j + 0.5f) / (float) quality;
-            line_points[ind].position.y = (float) i / (float) quality;
-        }
-    }
-    for (int i = 0; i < quality; i++) {
-        for (int j = 0; j <= quality; j++) {
-            int ind = (quality + 1) * (i + quality) + j;
-            line_points[ind].position.x = (float) j / (float) quality;
-            line_points[ind].position.y = ((float) i + 0.5f) / (float) quality;
-        }
-    }
-    for (int i = 0; i < quality; i++) {
-        for (int j = 0; j < quality; j++) {
-            int ind = quality * (i + 2 * (quality + 1)) + j;
-            line_points[ind].position.x = ((float) j + 0.5f) / (float) quality;
-            line_points[ind].position.y = ((float) i + 0.5f) / (float) quality;
-        }
-    }
-    for (auto &i : line_points) {
-        i.color[0] = i.color[1] = i.color[2] = 0;
-        i.color[3] = 255;
-    }
+
     GLuint view_location = glGetUniformLocation(program, "view");
 
     GLuint vbo[2], ebo[2], vao[2];
     glGenBuffers(2, vbo);
     glGenBuffers(2, ebo);
     glGenVertexArrays(2, vao);
-    for(int i = 0; i < 2; i++) {
+    for (int i = 0; i < 2; i++) {
         glBindBuffer(GL_ARRAY_BUFFER, vbo[i]);
         glBindVertexArray(vao[i]);
         glEnableVertexAttribArray(0);
@@ -259,9 +234,9 @@ int main() try {
             current_positions[i].second = start_positions[i].second + time * move_vectors[i].second;
             current_positions[i].first -= 2.f * floor(current_positions[i].first / 2.f);
             current_positions[i].second -= 2.f * floor(current_positions[i].second / 2.f);
-            if(current_positions[i].first > 1.f)
+            if (current_positions[i].first > 1.f)
                 current_positions[i].first = 2.f - current_positions[i].first;
-            if(current_positions[i].second > 1.f)
+            if (current_positions[i].second > 1.f)
                 current_positions[i].second = 2.f - current_positions[i].second;
         }
         std::vector<float> f((quality + 1) * (quality + 1));
@@ -279,48 +254,51 @@ int main() try {
                 vertices[ind].color[3] = 255;
             }
         }
+        std::vector<vertex> line_points;
+        for (int i = 0; i < quality; i++) {
+            for (int j = 0; j < quality; j++) {
+                int corners[2][3] = {{i * (quality + 1) + j + 1,
+                                             i * (quality + 1) + j,
+                                             (i + 1) * (quality + 1) + j},
+                                     {i * (quality + 1) + j + 1,
+                                             (i + 1) * (quality + 1) + j,
+                                             (i + 1) * (quality + 1) + j + 1}};
+                for(auto &corner : corners) {
+                    float max_f = 0.f;
+                    for (int k : corner)
+                        max_f = std::max(max_f, f[k]);
+                    float value = step * floor(max_f / step);
+                    bool near_value = true;
+                    for (int k : corner)
+                        if (abs(f[k] - value) > step)
+                            near_value = false;
 
-        const float step = 0.03f;
-        std::vector<int> line_indices;
-        for (int i = 0; i < quality; i++) {
-            for (int j = 0; j < quality; j++) {
-                int corners[3] = { i * (quality + 1) + j + 1,
-                                   i * (quality + 1) + j,
-                                   (i + 1) * (quality + 1) + j };
-                int medians[3] = {
-                        i * quality + j,
-                        (quality + 1) * (i + quality) + j,
-                        quality * (i + 2 * (quality + 1)) + j };
-                for(int k = 0; k < 3; k++) {
-                    if((floor(f[corners[(k + 1) % 3]] / step) - ceil(f[corners[k]] / step) > 0.01f &&
-                        floor(f[corners[(k + 2) % 3]] / step) - ceil(f[corners[k]] / step) > 0.01f) ||
-                       (floor(f[corners[k]] / step) - ceil(f[corners[(k + 1) % 3]] / step) > 0.01f &&
-                        floor(f[corners[k]] / step) - ceil(f[corners[(k + 2) % 3]] / step) > 0.01f)) {
-                        line_indices.push_back(medians[k]);
-                        line_indices.push_back(medians[(k + 2) % 3]);
+                    if (!near_value) continue;
+                    for (int k = 0; k < 3; k++) {
+                        if ((f[corner[(k + 1) % 3]] - value > eps &&
+                             f[corner[(k + 2) % 3]] - value > eps &&
+                             value - f[corner[k]] > eps) ||
+                            (value - f[corner[(k + 1) % 3]] > eps &&
+                             value - f[corner[(k + 2) % 3]] > eps &&
+                             f[corner[k]] - value > eps)) {
+                            float d[2] = {
+                                    (f[corner[k]] - value) / (f[corner[k]] - f[corner[(k + 1) % 3]]),
+                                    (f[corner[k]] - value) / (f[corner[k]] - f[corner[(k + 2) % 3]]),
+                            };
+                            for (int q = 0; q < 2; q++)
+                                line_points.push_back({{(vertices[corner[k]].position.x * d[q] +
+                                                         vertices[corner[(k + q + 1) % 3]].position.x * (1.f - d[q])),
+                                                               (vertices[corner[k]].position.y * d[q] +
+                                                                vertices[corner[(k + q + 1) % 3]].position.y * (1.f - d[q]))},
+                                                       {0,0, 0, 255}});
+                        }
                     }
                 }
             }
         }
-        for (int i = 0; i < quality; i++) {
-            for (int j = 0; j < quality; j++) {
-                int corners[3] = { i * (quality + 1) + j + 1,
-                                   (i + 1) * (quality + 1) + j ,
-                                   (i + 1) * (quality + 1) + j + 1};
-                int medians[3] = { quality * (i + 2 * (quality + 1)) + j,
-                                   (i + 1) * quality + j,
-                                   (quality + 1) * (i + quality) + j + 1 };
-                for(int k = 0; k < 3; k++) {
-                    if((floor(f[corners[(k + 1) % 3]] / step) - ceil(f[corners[k]] / step) > 0.01f &&
-                        floor(f[corners[(k + 2) % 3]] / step) - ceil(f[corners[k]] / step) > 0.01f) ||
-                       (floor(f[corners[k]] / step) - ceil(f[corners[(k + 1) % 3]] / step) > 0.01f &&
-                        floor(f[corners[k]] / step) - ceil(f[corners[(k + 2) % 3]] / step) > 0.01f)) {
-                        line_indices.push_back(medians[k]);
-                        line_indices.push_back(medians[(k + 2) % 3]);
-                    }
-                }
-            }
-        }
+        std::vector<int> line_indices(line_points.size());
+        for (int i = 0; i < line_points.size(); i++)
+            line_indices[i] = i;
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(program);
@@ -337,7 +315,8 @@ int main() try {
         glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
         glBufferData(GL_ARRAY_BUFFER, line_points.size() * sizeof(vertex), line_points.data(), GL_STATIC_DRAW);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo[1]);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, line_indices.size() * sizeof(std::uint32_t), line_indices.data(), GL_STATIC_DRAW);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, line_indices.size() * sizeof(std::uint32_t), line_indices.data(),
+                     GL_STATIC_DRAW);
         glDrawElements(GL_LINES, line_indices.size(), GL_UNSIGNED_INT, 0);
 
         SDL_GL_SwapWindow(window);
