@@ -100,8 +100,8 @@ struct vertex {
     std::uint8_t color[4];
 };
 
-const int quality = 100;
-const float step = 1.f, eps = 1e-9;
+int quality = 100;
+float step = 1.f, eps = 1e-9;
 
 int main() try {
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -161,25 +161,30 @@ int main() try {
     std::vector<vertex> vertices((quality + 1) * (quality + 1));
     std::vector<int> indices(6 * (quality + 1) * (quality + 1));
 
-    for (int i = 0; i <= quality; i++) {
-        for (int j = 0; j <= quality; j++) {
-            int ind = i * (quality + 1) + j;
-            vertices[ind].position.x = (float) j / (float) quality;
-            vertices[ind].position.y = (float) i / (float) quality;
-        }
-    }
-    for (int i = 0; i < quality; i++) {
-        for (int j = 0; j < quality; j++) {
-            int ind = i * quality + j;
-            indices[ind * 6] = ind + i;
-            indices[ind * 6 + 1] = ind + i + 1;
-            indices[ind * 6 + 2] = ind + i + quality + 1;
-            indices[ind * 6 + 3] = ind + i + quality + 1;
-            indices[ind * 6 + 4] = ind + i + 1;
-            indices[ind * 6 + 5] = ind + i + quality + 2;
-        }
-    }
+    auto update_vertices = [&]() {
+        vertices.assign((quality + 1) * (quality + 1), {});
+        indices.assign(6 * (quality + 1) * (quality + 1), 0);
 
+        for (int i = 0; i <= quality; i++) {
+            for (int j = 0; j <= quality; j++) {
+                int ind = i * (quality + 1) + j;
+                vertices[ind].position.x = (float) j / (float) quality;
+                vertices[ind].position.y = (float) i / (float) quality;
+            }
+        }
+        for (int i = 0; i < quality; i++) {
+            for (int j = 0; j < quality; j++) {
+                int ind = i * quality + j;
+                indices[ind * 6] = ind + i;
+                indices[ind * 6 + 1] = ind + i + 1;
+                indices[ind * 6 + 2] = ind + i + quality + 1;
+                indices[ind * 6 + 3] = ind + i + quality + 1;
+                indices[ind * 6 + 4] = ind + i + 1;
+                indices[ind * 6 + 5] = ind + i + quality + 2;
+            }
+        }
+    };
+    update_vertices();
     GLuint view_location = glGetUniformLocation(program, "view");
 
     GLuint vbo[2], ebo[2], vao[2];
@@ -215,10 +220,23 @@ int main() try {
                 case SDL_MOUSEBUTTONDOWN:
                     break;
                 case SDL_KEYDOWN:
-                    if (event.key.keysym.sym == SDLK_LEFT)
-                        std::cout << "left\n";
-                    else if (event.key.keysym.sym == SDLK_RIGHT)
-                        std::cout << "right\n";
+                    if (event.key.keysym.sym == SDLK_UP) {
+                        if (step > 0.1f + eps)
+                            step -= 0.1f;
+                    } else if (event.key.keysym.sym == SDLK_DOWN) {
+                        if (step < 10.f - eps)
+                            step += 0.1f;
+                    } else if (event.key.keysym.sym == SDLK_LEFT) {
+                        if (quality > 1) {
+                            --quality;
+                            update_vertices();
+                        }
+                    } else if (event.key.keysym.sym == SDLK_RIGHT) {
+                        if (quality < 150) {
+                            ++quality;
+                            update_vertices();
+                        }
+                    }
                     break;
                 default:
                     break;
@@ -263,13 +281,13 @@ int main() try {
                                      {i * (quality + 1) + j + 1,
                                              (i + 1) * (quality + 1) + j,
                                              (i + 1) * (quality + 1) + j + 1}};
-                for(auto &corner : corners) {
+                for (auto &corner: corners) {
                     float max_f = 0.f;
-                    for (int k : corner)
+                    for (int k: corner)
                         max_f = std::max(max_f, f[k]);
                     float value = step * floor(max_f / step);
                     bool near_value = true;
-                    for (int k : corner)
+                    for (int k: corner)
                         if (abs(f[k] - value) > step)
                             near_value = false;
 
@@ -289,8 +307,9 @@ int main() try {
                                 line_points.push_back({{(vertices[corner[k]].position.x * d[q] +
                                                          vertices[corner[(k + q + 1) % 3]].position.x * (1.f - d[q])),
                                                                (vertices[corner[k]].position.y * d[q] +
-                                                                vertices[corner[(k + q + 1) % 3]].position.y * (1.f - d[q]))},
-                                                       {0,0, 0, 255}});
+                                                                vertices[corner[(k + q + 1) % 3]].position.y *
+                                                                (1.f - d[q]))},
+                                                       {0,     0, 0, 255}});
                         }
                     }
                 }
