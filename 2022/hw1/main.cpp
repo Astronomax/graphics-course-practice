@@ -100,8 +100,8 @@ struct vertex {
     std::uint8_t color[4];
 };
 
-int quality = 100;
-float step = 1.f, eps = 1e-9;
+int quality = 8, N = 3;
+float step = 0.2f, eps = 1e-9;
 
 int main() try {
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -141,7 +141,6 @@ int main() try {
     std::default_random_engine random_engine(random_device());
     std::uniform_real_distribution<float> uniform(0, 1);
 
-    const int N = 3;
     std::vector<std::array<std::uint8_t, 4>> c(N);
     c[0] = {255, 0, 0, 255};
     c[1] = {255, 255, 0, 255};
@@ -231,11 +230,13 @@ int main() try {
                             --quality;
                             update_vertices();
                         }
+                        std::cout << quality << std::endl;
                     } else if (event.key.keysym.sym == SDLK_RIGHT) {
-                        if (quality < 150) {
+                        if (quality < 200) {
                             ++quality;
                             update_vertices();
                         }
+                        std::cout << quality << std::endl;
                     }
                     break;
                 default:
@@ -248,8 +249,8 @@ int main() try {
         float time = std::chrono::duration_cast<std::chrono::duration<float>>(now - start_time).count();;
 
         for (int i = 0; i < N; i++) {
-            current_positions[i].first = start_positions[i].first + time * move_vectors[i].first;
-            current_positions[i].second = start_positions[i].second + time * move_vectors[i].second;
+            current_positions[i].first = start_positions[i].first + 0.001f * time * move_vectors[i].first;
+            current_positions[i].second = start_positions[i].second + 0.001f * time * move_vectors[i].second;
             current_positions[i].first -= 2.f * floor(current_positions[i].first / 2.f);
             current_positions[i].second -= 2.f * floor(current_positions[i].second / 2.f);
             if (current_positions[i].first > 1.f)
@@ -286,6 +287,7 @@ int main() try {
                     for (int k: corner)
                         max_f = std::max(max_f, f[k]);
                     float value = step * floor(max_f / step);
+                    std::cout << value << std::endl;
                     bool near_value = true;
                     for (int k: corner)
                         if (abs(f[k] - value) > step)
@@ -303,13 +305,22 @@ int main() try {
                                     (f[corner[k]] - value) / (f[corner[k]] - f[corner[(k + 1) % 3]]),
                                     (f[corner[k]] - value) / (f[corner[k]] - f[corner[(k + 2) % 3]]),
                             };
+                            float x[2][2] = {
+                                    {vertices[corner[k]].position.x,
+                                     vertices[corner[(k + 1) % 3]].position.x},
+                                    {vertices[corner[k]].position.x,
+                                     vertices[corner[(k + 2) % 3]].position.x}
+                            };
+                            float y[2][2] = {
+                                    {vertices[corner[k]].position.y,
+                                     vertices[corner[(k + 1) % 3]].position.y},
+                                    {vertices[corner[k]].position.y,
+                                     vertices[corner[(k + 2) % 3]].position.y}
+                            };
                             for (int q = 0; q < 2; q++)
-                                line_points.push_back({{(vertices[corner[k]].position.x * d[q] +
-                                                         vertices[corner[(k + q + 1) % 3]].position.x * (1.f - d[q])),
-                                                               (vertices[corner[k]].position.y * d[q] +
-                                                                vertices[corner[(k + q + 1) % 3]].position.y *
-                                                                (1.f - d[q]))},
-                                                       {0,     0, 0, 255}});
+                                line_points.push_back({{(x[q][0] * d[q] + x[q][1] * (1.f - d[q])),
+                                                               (y[1][0] * d[q] + y[q][1] * (1.f - d[q]))},
+                                                        {0,0,0,255}});
                         }
                     }
                 }
