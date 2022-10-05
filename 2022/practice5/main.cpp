@@ -36,32 +36,39 @@ void glew_fail(std::string_view message, GLenum error)
 const char vertex_shader_source[] =
 R"(#version 330 core
 
+uniform float shift;
 uniform mat4 transform;
 uniform mat4 projection;
 
 layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec3 in_normal;
+layout (location = 2) in vec2 in_texcoord;
 
 out vec3 normal;
+out vec2 texcoord;
 
 void main()
 {
     gl_Position = projection * transform * vec4(in_position, 1.0);
     normal = mat3(transform) * in_normal;
+    texcoord = vec2(in_texcoord[0], in_texcoord[1] + shift);
 }
 )";
 
 const char fragment_shader_source[] =
 R"(#version 330 core
 
+uniform sampler2D texture;
+
 in vec3 normal;
+in vec2 texcoord;
 
 layout (location = 0) out vec4 out_color;
 
 void main()
 {
-    float lightness = 0.5 + 0.5 * dot(normalize(normal), normalize(vec3(1.0, 2.0, 3.0)));
-    vec3 albedo = vec3(1.0);
+    float lightness = 0.5 + 0.5 * dot(normalize(normal), normalize(vec3(0.0, 1.0, 0.0)));
+    vec3 albedo = vec3(texture2D(texture, texcoord));
     out_color = vec4(lightness * albedo, 1.0);
 }
 )";
@@ -149,6 +156,8 @@ int main() try
     auto fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
     auto program = create_program(vertex_shader, fragment_shader);
 
+    GLuint shift_location = glGetUniformLocation(program, "shift");
+    GLuint texture_location = glGetUniformLocation(program, "texture");
     GLuint transform_location = glGetUniformLocation(program, "transform");
     GLuint projection_location = glGetUniformLocation(program, "projection");
 
@@ -164,6 +173,59 @@ int main() try
     float offset_z = -2.f;
 
     std::map<SDL_Keycode, bool> button_down;
+
+    int size = 1024;
+    GLuint tex, vbo, ebo, vao;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    //glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+    //glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    int x, y, channels_in_file;
+    unsigned char* pixels = stbi_load(cow_texture_path.c_str(), &x, &y, &channels_in_file, 4);
+    /*
+    std::vector<std::uint32_t> pixels(size * size);
+    for(int i = 0; i < size; i++)
+        for(int j = 0; j < size; j++)
+            pixels[i * size + j] = (((i + j) % 2) ? 0xFF000000u : 0xFFFFFFFFu);
+    */
+    //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, size, size,
+    //             0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y,
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    /*
+    std::uint32_t colors[3] = { 0xFF0000FFu, 0xFF00FF00u, 0xFFFF0000u};
+    for(int level = 1; level <= 3; level++) {
+        size /= 2;
+        pixels.resize(size * size);
+        for (int i = 0; i < size; i++)
+            for (int j = 0; j < size; j++)
+                pixels[i * size + j] = colors[level - 1];
+        glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA8, size, size,
+                     0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    }
+    */
+    glGenBuffers(1, &vbo);
+    glGenBuffers(1, &ebo);
+    glGenVertexArrays(1, &vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, cow.vertices.size() * sizeof(obj_data::vertex), cow.vertices.data(),
+                 GL_STATIC_DRAW);
+    glActiveTexture(0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+
+    glBindVertexArray(vao);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(obj_data::vertex), (GLvoid *) 0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, false, sizeof(obj_data::vertex), (GLvoid *) 12);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, false, sizeof(obj_data::vertex), (GLvoid *) 24);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, cow.indices.size() * sizeof(std::uint32_t), cow.indices.data(),
+                 GL_STATIC_DRAW);
 
     bool running = true;
     while (running)
@@ -228,9 +290,11 @@ int main() try
         };
 
         glUseProgram(program);
+        glUniform1f(shift_location, time);
+        glUniform1i(texture_location, 0);
         glUniformMatrix4fv(transform_location, 1, GL_TRUE, transform);
         glUniformMatrix4fv(projection_location, 1, GL_TRUE, projection);
-
+        glDrawElements(GL_TRIANGLES, cow.indices.size(), GL_UNSIGNED_INT, 0);
         SDL_GL_SwapWindow(window);
     }
 
