@@ -2,7 +2,9 @@
 #include <SDL.h>
 #undef main
 #else
+
 #include <SDL2/SDL.h>
+
 #endif
 
 #include <GL/glew.h>
@@ -18,23 +20,20 @@
 #include "obj_parser.hpp"
 #include "stb_image.h"
 
-std::string to_string(std::string_view str)
-{
+std::string to_string(std::string_view str) {
     return std::string(str.begin(), str.end());
 }
 
-void sdl2_fail(std::string_view message)
-{
+void sdl2_fail(std::string_view message) {
     throw std::runtime_error(to_string(message) + SDL_GetError());
 }
 
-void glew_fail(std::string_view message, GLenum error)
-{
+void glew_fail(std::string_view message, GLenum error) {
     throw std::runtime_error(to_string(message) + reinterpret_cast<const char *>(glewGetErrorString(error)));
 }
 
 const char vertex_shader_source[] =
-R"(#version 330 core
+        R"(#version 330 core
 
 uniform float shift;
 uniform mat4 transform;
@@ -56,9 +55,9 @@ void main()
 )";
 
 const char fragment_shader_source[] =
-R"(#version 330 core
+        R"(#version 330 core
 
-uniform sampler2D texture;
+uniform sampler2D tex;
 
 in vec3 normal;
 in vec2 texcoord;
@@ -68,20 +67,18 @@ layout (location = 0) out vec4 out_color;
 void main()
 {
     float lightness = 0.5 + 0.5 * dot(normalize(normal), normalize(vec3(0.0, 1.0, 0.0)));
-    vec3 albedo = vec3(texture2D(texture, texcoord));
+    vec3 albedo = vec3(texture(tex, texcoord));
     out_color = vec4(lightness * albedo, 1.0);
 }
 )";
 
-GLuint create_shader(GLenum type, const char * source)
-{
+GLuint create_shader(GLenum type, const char *source) {
     GLuint result = glCreateShader(type);
     glShaderSource(result, 1, &source, nullptr);
     glCompileShader(result);
     GLint status;
     glGetShaderiv(result, GL_COMPILE_STATUS, &status);
-    if (status != GL_TRUE)
-    {
+    if (status != GL_TRUE) {
         GLint info_log_length;
         glGetShaderiv(result, GL_INFO_LOG_LENGTH, &info_log_length);
         std::string info_log(info_log_length, '\0');
@@ -91,8 +88,7 @@ GLuint create_shader(GLenum type, const char * source)
     return result;
 }
 
-GLuint create_program(GLuint vertex_shader, GLuint fragment_shader)
-{
+GLuint create_program(GLuint vertex_shader, GLuint fragment_shader) {
     GLuint result = glCreateProgram();
     glAttachShader(result, vertex_shader);
     glAttachShader(result, fragment_shader);
@@ -100,8 +96,7 @@ GLuint create_program(GLuint vertex_shader, GLuint fragment_shader)
 
     GLint status;
     glGetProgramiv(result, GL_LINK_STATUS, &status);
-    if (status != GL_TRUE)
-    {
+    if (status != GL_TRUE) {
         GLint info_log_length;
         glGetProgramiv(result, GL_INFO_LOG_LENGTH, &info_log_length);
         std::string info_log(info_log_length, '\0');
@@ -112,8 +107,7 @@ GLuint create_program(GLuint vertex_shader, GLuint fragment_shader)
     return result;
 }
 
-int main() try
-{
+int main() try {
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
         sdl2_fail("SDL_Init: ");
 
@@ -128,11 +122,11 @@ int main() try
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
-    SDL_Window * window = SDL_CreateWindow("Graphics course practice 5",
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
-        800, 600,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
+    SDL_Window *window = SDL_CreateWindow("Graphics course practice 5",
+                                          SDL_WINDOWPOS_CENTERED,
+                                          SDL_WINDOWPOS_CENTERED,
+                                          800, 600,
+                                          SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
 
     if (!window)
         sdl2_fail("SDL_CreateWindow: ");
@@ -157,7 +151,7 @@ int main() try
     auto program = create_program(vertex_shader, fragment_shader);
 
     GLuint shift_location = glGetUniformLocation(program, "shift");
-    GLuint texture_location = glGetUniformLocation(program, "texture");
+    GLuint texture_location = glGetUniformLocation(program, "tex");
     GLuint transform_location = glGetUniformLocation(program, "transform");
     GLuint projection_location = glGetUniformLocation(program, "projection");
 
@@ -175,29 +169,21 @@ int main() try
     std::map<SDL_Keycode, bool> button_down;
 
     int size = 1024;
-    GLuint tex, vbo, ebo, vao;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    //glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
-    //glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    int x, y, channels_in_file;
-    unsigned char* pixels = stbi_load(cow_texture_path.c_str(), &x, &y, &channels_in_file, 4);
-    /*
+    GLuint tex[2], vbo, ebo, vao;
+    glGenTextures(2, tex);
+    glActiveTexture(GL_TEXTURE0 + 0);
+    glBindTexture(GL_TEXTURE_2D, tex[0]);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     std::vector<std::uint32_t> pixels(size * size);
-    for(int i = 0; i < size; i++)
-        for(int j = 0; j < size; j++)
+    for (int i = 0; i < size; i++)
+        for (int j = 0; j < size; j++)
             pixels[i * size + j] = (((i + j) % 2) ? 0xFF000000u : 0xFFFFFFFFu);
-    */
-    //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, size, size,
-    //             0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y,
-                 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, size, size,
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
     glGenerateMipmap(GL_TEXTURE_2D);
-    /*
-    std::uint32_t colors[3] = { 0xFF0000FFu, 0xFF00FF00u, 0xFFFF0000u};
-    for(int level = 1; level <= 3; level++) {
+    std::uint32_t colors[3] = {0xFF0000FFu, 0xFF00FF00u, 0xFFFF0000u};
+    for (int level = 1; level <= 3; level++) {
         size /= 2;
         pixels.resize(size * size);
         for (int i = 0; i < size; i++)
@@ -206,16 +192,23 @@ int main() try
         glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA8, size, size,
                      0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
     }
-    */
+    glActiveTexture(GL_TEXTURE0 + 1);
+    glBindTexture(GL_TEXTURE_2D, tex[1]);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    int x, y, channels_in_file;
+    unsigned char *pixels_ = stbi_load(cow_texture_path.c_str(), &x, &y,
+                                       &channels_in_file, 4);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y,
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels_);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    stbi_image_free(pixels_);
     glGenBuffers(1, &vbo);
     glGenBuffers(1, &ebo);
     glGenVertexArrays(1, &vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, cow.vertices.size() * sizeof(obj_data::vertex), cow.vertices.data(),
-                 GL_STATIC_DRAW);
-    glActiveTexture(0);
-    glBindTexture(GL_TEXTURE_2D, tex);
-
+    glBufferData(GL_ARRAY_BUFFER, cow.vertices.size() * sizeof(obj_data::vertex),
+                 cow.vertices.data(), GL_STATIC_DRAW);
     glBindVertexArray(vao);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(obj_data::vertex), (GLvoid *) 0);
@@ -228,29 +221,28 @@ int main() try
                  GL_STATIC_DRAW);
 
     bool running = true;
-    while (running)
-    {
-        for (SDL_Event event; SDL_PollEvent(&event);) switch (event.type)
-        {
-        case SDL_QUIT:
-            running = false;
-            break;
-        case SDL_WINDOWEVENT: switch (event.window.event)
-            {
-            case SDL_WINDOWEVENT_RESIZED:
-                width = event.window.data1;
-                height = event.window.data2;
-                glViewport(0, 0, width, height);
-                break;
+    while (running) {
+        for (SDL_Event event; SDL_PollEvent(&event);)
+            switch (event.type) {
+                case SDL_QUIT:
+                    running = false;
+                    break;
+                case SDL_WINDOWEVENT:
+                    switch (event.window.event) {
+                        case SDL_WINDOWEVENT_RESIZED:
+                            width = event.window.data1;
+                            height = event.window.data2;
+                            glViewport(0, 0, width, height);
+                            break;
+                    }
+                    break;
+                case SDL_KEYDOWN:
+                    button_down[event.key.keysym.sym] = true;
+                    break;
+                case SDL_KEYUP:
+                    button_down[event.key.keysym.sym] = false;
+                    break;
             }
-            break;
-        case SDL_KEYDOWN:
-            button_down[event.key.keysym.sym] = true;
-            break;
-        case SDL_KEYUP:
-            button_down[event.key.keysym.sym] = false;
-            break;
-        }
 
         if (!running)
             break;
@@ -273,25 +265,23 @@ int main() try
         float top = near;
         float right = (top * width) / height;
 
-        float transform[16] =
-        {
-            std::cos(angle_y), 0.f, -std::sin(angle_y), 0.f,
-            0.f, 1.f, 0.f, 0.f,
-            std::sin(angle_y), 0.f, std::cos(angle_y), offset_z,
-            0.f, 0.f, 0.f, 1.f,
+        float transform[16] = {
+                std::cos(angle_y), 0.f, -std::sin(angle_y), 0.f,
+                0.f, 1.f, 0.f, 0.f,
+                std::sin(angle_y), 0.f, std::cos(angle_y), offset_z,
+                0.f, 0.f, 0.f, 1.f,
         };
 
-        float projection[16] =
-        {
-            near / right, 0.f, 0.f, 0.f,
-            0.f, near / top, 0.f, 0.f,
-            0.f, 0.f, - (far + near) / (far - near), - 2.f * far * near / (far - near),
-            0.f, 0.f, -1.f, 0.f,
+        float projection[16] = {
+                near / right, 0.f, 0.f, 0.f,
+                0.f, near / top, 0.f, 0.f,
+                0.f, 0.f, -(far + near) / (far - near), -2.f * far * near / (far - near),
+                0.f, 0.f, -1.f, 0.f,
         };
 
         glUseProgram(program);
         glUniform1f(shift_location, time);
-        glUniform1i(texture_location, 0);
+        glUniform1i(texture_location, 1);
         glUniformMatrix4fv(transform_location, 1, GL_TRUE, transform);
         glUniformMatrix4fv(projection_location, 1, GL_TRUE, projection);
         glDrawElements(GL_TRIANGLES, cow.indices.size(), GL_UNSIGNED_INT, 0);
@@ -301,8 +291,7 @@ int main() try
     SDL_GL_DeleteContext(gl_context);
     SDL_DestroyWindow(window);
 }
-catch (std::exception const & e)
-{
+catch (std::exception const &e) {
     std::cerr << e.what() << std::endl;
     return EXIT_FAILURE;
 }
