@@ -275,7 +275,11 @@ int main() try {
 
     std::map<SDL_Keycode, bool> button_down;
 
-    float view_angle = 0.f;
+    float view_angle[4] = {
+            glm::radians(90.f),
+            glm::radians(90.f),
+            glm::radians(90.f),
+            glm::radians(90.f)};
     float camera_distance = 0.5f;
     float model_angle = glm::pi<float>() / 2.f;
     float model_scale = 1.f;
@@ -327,51 +331,70 @@ int main() try {
         if (button_down[SDLK_RIGHT])
             model_angle += 2.f * dt;
 
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, frame_buffer);
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_CULL_FACE);
-        glViewport(0, 0, width / 2, height / 2);
 
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_CULL_FACE);
+        const int colors[4][4] = {
+            {0, 1, 0, 1},
+            {1, 0, 0, 1},
+            {0, 0, 0, 1},
+            {1, 1, 0, 1}
+        };
+        glm::vec3 rotation[4] = {
+                {1.f,0.f,0.f},
+                {0.f,1.f,0.f},
+                {1.f,0.f,0.f},
+                {0.f,0.f,1.f}
+        };
 
-        float near = 0.1f;
-        float far = 100.f;
+        for(int k = 0; k < 4; k++) {
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, frame_buffer);
+            glViewport(0, 0, width / 2, height / 2);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glClearColor(colors[k][0], colors[k][1], colors[k][2], colors[k][3]);
 
-        glm::mat4 model(1.f);
-        model = glm::rotate(model, model_angle, {0.f, 1.f, 0.f});
-        model = glm::scale(model, glm::vec3(model_scale));
+            glEnable(GL_DEPTH_TEST);
+            glEnable(GL_CULL_FACE);
 
-        glm::mat4 view(1.f);
-        view = glm::translate(view, {0.f, 0.f, -camera_distance});
-        view = glm::rotate(view, view_angle, {1.f, 0.f, 0.f});
+            float near = 0.1f;
+            float far = 100.f;
 
-        glm::mat4 projection = glm::perspective(glm::pi<float>() / 2.f, (1.f * width) / height, near, far);
+            glm::mat4 model(1.f);
+            model = glm::rotate(model, model_angle, {0.f, 1.f, 0.f});
+            model = glm::scale(model, glm::vec3(model_scale));
 
-        glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
+            glm::mat4 view(1.f);
+            view *= glm::translate(view, {0.f, 0.f, -camera_distance});
+            view *= glm::rotate(view, view_angle[k], rotation[k]);
 
-        glUseProgram(dragon_program);
-        glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
-        glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
-        glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
+            float aspect = (float)height / (float)width;
+            glm::mat4 projection = (!k) ? glm::perspective(glm::pi<float>() / 2.f, 1.f / aspect, near, far) :
+                                   glm::ortho(-1.0f, 1.0f, -1.0f * aspect, 1.0f * aspect, near, far);
 
-        glUniform3fv(camera_position_location, 1, (float *) (&camera_position));
+            glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
 
-        glBindVertexArray(dragon_vao);
-        glDrawElements(GL_TRIANGLES, dragon.indices.size(), GL_UNSIGNED_INT, nullptr);
+            glUseProgram(dragon_program);
+            glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+            glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
+            glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
 
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-        glViewport(0, 0, width, height);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glUniform3fv(camera_position_location, 1, (float *) (&camera_position));
 
-        glUseProgram(rectangle_program);
-        glUniform2f(center_location, -0.5f, -0.5f);
-        glUniform2f(size_location, 0.5f, 0.5f);
-        glUniform1i(render_result_location, 0);
-        glBindVertexArray(rectangle_vao);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+            glBindVertexArray(dragon_vao);
+            glDrawElements(GL_TRIANGLES, dragon.indices.size(), GL_UNSIGNED_INT, nullptr);
 
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+            glViewport(0, 0, width, height);
+            glClear(GL_DEPTH_BUFFER_BIT);
+            //glClearColor(colors[k][0], colors[k][1], colors[k][2], colors[k][3]);
+
+            glUseProgram(rectangle_program);
+            float center_x = (k & 1) ? -0.5f : 0.5f;
+            float center_y = (k & 2) ? -0.5f : 0.5f;
+            glUniform2f(center_location, center_x, center_y);
+            glUniform2f(size_location, 0.5f, 0.5f);
+            glUniform1i(render_result_location, 0);
+            glBindVertexArray(rectangle_vao);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
         SDL_GL_SwapWindow(window);
     }
 
