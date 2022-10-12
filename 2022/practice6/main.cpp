@@ -120,6 +120,7 @@ void main()
 const char rectangle_fragment_shader_source[] =
         R"(#version 330 core
 
+uniform int mode;
 uniform sampler2D render_result;
 in vec2 texcoord;
 
@@ -129,6 +130,9 @@ void main()
 {
     //out_color = vec4(texcoord, 0.0, 1.0);
     out_color = texture(render_result, texcoord);
+    if(mode == 1) {
+        out_color = floor(out_color * 4.0) / 3.0;
+    }
 }
 )";
 
@@ -265,6 +269,7 @@ int main() try {
     GLuint center_location = glGetUniformLocation(rectangle_program, "center");
     GLuint size_location = glGetUniformLocation(rectangle_program, "size");
     GLuint render_result_location = glGetUniformLocation(rectangle_program, "render_result");
+    GLuint mode_location = glGetUniformLocation(rectangle_program, "mode");
 
     GLuint rectangle_vao;
     glGenVertexArrays(1, &rectangle_vao);
@@ -384,14 +389,14 @@ int main() try {
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
             glViewport(0, 0, width, height);
             glClear(GL_DEPTH_BUFFER_BIT);
-            //glClearColor(colors[k][0], colors[k][1], colors[k][2], colors[k][3]);
-
+            
             glUseProgram(rectangle_program);
             float center_x = (k & 1) ? -0.5f : 0.5f;
             float center_y = (k & 2) ? -0.5f : 0.5f;
             glUniform2f(center_location, center_x, center_y);
             glUniform2f(size_location, 0.5f, 0.5f);
             glUniform1i(render_result_location, 0);
+            glUniform1i(mode_location, k);
             glBindVertexArray(rectangle_vao);
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
