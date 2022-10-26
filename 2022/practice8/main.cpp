@@ -104,6 +104,7 @@ void main()
     vec3 color = albedo * ambient_light;
 
     vec4 ndc = shadow_projection * vec4(position, 1);
+    /*
     int in_shadow = 0;
     if(-1.0 <= ndc.x && ndc.x <= 1.0)
         if(-1.0 <= ndc.y && ndc.y <= 1.0)
@@ -112,6 +113,18 @@ void main()
                 in_shadow = 1;
 
     if(in_shadow == 0) color += sun_color * phong(sun_direction);
+    */
+
+    float r = 4.0, numer = 0.0, denom = 0.0;
+    for (int x = -3; x <= 3; ++x) {
+        for (int y = -3; y <= 3; ++y) {
+            float k = exp(length(vec2(x, y))) / pow(r, 2);
+            numer += k * texture(shadow_map, (ndc.xyz * 0.5 + 0.5) +
+                vec3(x / textureSize(shadow_map, 0).x, y / textureSize(shadow_map, 0).y,0.0));
+            denom += k;
+        }
+    }
+    color += numer * sun_color * phong(sun_direction) / denom;
     out_color = vec4(color, 1.0);
 }
 )";
