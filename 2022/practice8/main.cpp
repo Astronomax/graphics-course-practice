@@ -58,7 +58,6 @@ layout (location = 1) in vec3 in_normal;
 
 out vec3 position;
 out vec3 normal;
-//flat out int in_shadow;
 
 void main()
 {
@@ -76,11 +75,11 @@ uniform vec3 albedo;
 uniform vec3 sun_direction;
 uniform vec3 sun_color;
 uniform mat4 shadow_projection;
-uniform sampler2D shadow_map;
+//uniform sampler2D shadow_map;
+uniform sampler2DShadow shadow_map;
 
 in vec3 position;
 in vec3 normal;
-//flat in int in_shadow;
 
 layout (location = 0) out vec4 out_color;
 
@@ -108,7 +107,8 @@ void main()
     int in_shadow = 0;
     if(-1.0 <= ndc.x && ndc.x <= 1.0)
         if(-1.0 <= ndc.y && ndc.y <= 1.0)
-            if(texture(shadow_map, ndc.xy * 0.5 + 0.5).r < ndc.z * 0.5 + 0.5)
+            //if(texture(shadow_map, ndc.xy * 0.5 + 0.5).r < ndc.z * 0.5 + 0.5)
+            if(texture(shadow_map, ndc.xyz * 0.5 + 0.5) == 0.0)
                 in_shadow = 1;
 
     if(in_shadow == 0) color += sun_color * phong(sun_direction);
@@ -277,10 +277,15 @@ int main() try {
     glBindTexture(GL_TEXTURE_2D, tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, shadow_map_size,
                  shadow_map_size,0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    //glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    //glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+
     GLuint fbo;
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
@@ -413,7 +418,6 @@ int main() try {
         glUseProgram(extra_program);
         glUniform1i(texture_location, 0);
         glBindVertexArray(extra_fake_arr);
-        //glBindTexture(GL_TEXTURE_2D, tex);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
         SDL_GL_SwapWindow(window);
