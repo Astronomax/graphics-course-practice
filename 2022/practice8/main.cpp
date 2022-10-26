@@ -52,14 +52,13 @@ const char vertex_shader_source[] =
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
-uniform mat4 shadow_projection;
-uniform sampler2D shadow_map;
 
 layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec3 in_normal;
 
 out vec3 position;
 out vec3 normal;
+//flat out int in_shadow;
 
 void main()
 {
@@ -73,14 +72,15 @@ const char fragment_shader_source[] =
     R"(#version 330 core
 
 uniform vec3 camera_position;
-
 uniform vec3 albedo;
-
 uniform vec3 sun_direction;
 uniform vec3 sun_color;
+uniform mat4 shadow_projection;
+uniform sampler2D shadow_map;
 
 in vec3 position;
 in vec3 normal;
+//flat in int in_shadow;
 
 layout (location = 0) out vec4 out_color;
 
@@ -102,7 +102,16 @@ vec3 phong(vec3 direction) {
 void main()
 {
     float ambient_light = 0.2;
-    vec3 color = albedo * ambient_light + sun_color * phong(sun_direction);
+    vec3 color = albedo * ambient_light;
+
+    vec4 ndc = shadow_projection * vec4(position, 1);
+    int in_shadow = 0;
+    if(-1.0 <= ndc.x && ndc.x <= 1.0)
+        if(-1.0 <= ndc.y && ndc.y <= 1.0)
+            if(texture(shadow_map, ndc.xy * 0.5 + 0.5).r < ndc.z * 0.5 + 0.5)
+                in_shadow = 1;
+
+    if(in_shadow == 0) color += sun_color * phong(sun_direction);
     out_color = vec4(color, 1.0);
 }
 )";
@@ -339,13 +348,6 @@ int main() try {
             camera_angle -= 2.f * dt;
 
 
-        auto light_Z = glm::vec3(0, -1, 0);
-        auto light_X = glm::vec3(1, 0, 0);
-        auto light_Y = glm::cross(light_X, light_Z);
-        glm::mat4 shadow_projection = glm::mat4(glm::transpose(
-                glm::mat3(light_X, light_Y, light_Z)));
-
-
         float near = 0.1f;
         float far = 100.f;
 
@@ -362,6 +364,17 @@ int main() try {
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
         glm::vec3 sun_direction = glm::normalize(glm::vec3(std::sin(time * 0.5f), 2.f, std::cos(time * 0.5f)));
 
+        /*
+        auto light_Z = glm::vec3(0, -1, 0);
+        auto light_X = glm::vec3(1, 0, 0);
+        auto light_Y = glm::cross(light_X, light_Z);*/
+
+        auto light_Z = -sun_direction;
+        auto light_X = glm::cross(light_Z, glm::vec3(1, 0, 0));
+
+        auto light_Y = glm::cross(light_X, light_Z);
+        glm::mat4 shadow_projection = glm::mat4(glm::transpose(
+                glm::mat3(light_X, light_Y, light_Z)));
 
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
         glViewport(0, 0, shadow_map_size, shadow_map_size);
