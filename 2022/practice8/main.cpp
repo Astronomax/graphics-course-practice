@@ -118,7 +118,7 @@ void main()
     float r = 4.0, numer = 0.0, denom = 0.0;
     for (int x = -3; x <= 3; ++x) {
         for (int y = -3; y <= 3; ++y) {
-            float k = exp(length(vec2(x, y))) / pow(r, 2);
+            float k = exp(-(pow(x, 2) + pow(y, 2)) / pow(r, 2));
             numer += k * texture(shadow_map, (ndc.xyz * 0.5 + 0.5) +
                 vec3(x / textureSize(shadow_map, 0).x, y / textureSize(shadow_map, 0).y,0.0));
             denom += k;
@@ -385,12 +385,11 @@ int main() try {
         /*
         auto light_Z = glm::vec3(0, -1, 0);
         auto light_X = glm::vec3(1, 0, 0);
-        auto light_Y = glm::cross(light_X, light_Z);*/
+        auto light_Y = glm::normalize(glm::cross(light_X, light_Z));*/
 
         auto light_Z = -sun_direction;
-        auto light_X = glm::cross(light_Z, glm::vec3(1, 0, 0));
-
-        auto light_Y = glm::cross(light_X, light_Z);
+        auto light_X = glm::normalize(glm::cross(light_Z, glm::vec3(1, 0, 0)));
+        auto light_Y = glm::normalize(glm::cross(light_X, light_Z));
         glm::mat4 shadow_projection = glm::mat4(glm::transpose(
                 glm::mat3(light_X, light_Y, light_Z)));
 
