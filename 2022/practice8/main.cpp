@@ -52,6 +52,8 @@ const char vertex_shader_source[] =
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+uniform mat4 shadow_projection;
+uniform sampler2D shadow_map;
 
 layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec3 in_normal;
@@ -105,15 +107,54 @@ void main()
 }
 )";
 
-GLuint create_shader(GLenum type, const char *source)
-{
+const GLchar *extra_fragment_shader_source = R"(#version 330 core
+    layout (location = 0) out vec4 out_color;
+    uniform sampler2D tex;
+    in vec2 texcoord;
+
+    void main() {
+        out_color = vec4(texture(tex, texcoord).r);
+    }
+)";
+
+const GLchar *extra_vertex_shader_source = R"(#version 330 core
+    const vec2 VERTICES[4] = vec2[4](
+	    vec2(-1.0, -1.0),
+	    vec2(-1.0, -0.5),
+	    vec2(-0.5, -1.0),
+        vec2(-0.5, -0.5)
+    );
+
+    out vec2 texcoord;
+
+    void main() {
+        gl_Position = vec4(VERTICES[gl_VertexID], 0.0, 1.0);
+        texcoord = VERTICES[gl_VertexID] * 2.0 + vec2(2.0);
+    }
+)";
+
+const GLchar *shadow_map_fragment_shader_source = R"(#version 330 core
+    void main() {}
+)";
+
+const GLchar *shadow_map_vertex_shader_source = R"(#version 330 core
+    uniform mat4 model;
+    uniform mat4 projection;
+
+    layout (location = 0) in vec3 in_position;
+
+    void main() {
+        gl_Position = projection * model * vec4(in_position, 1.0);
+    }
+)";
+
+GLuint create_shader(GLenum type, const char *source) {
     GLuint result = glCreateShader(type);
     glShaderSource(result, 1, &source, nullptr);
     glCompileShader(result);
     GLint status;
     glGetShaderiv(result, GL_COMPILE_STATUS, &status);
-    if (status != GL_TRUE)
-    {
+    if (status != GL_TRUE) {
         GLint info_log_length;
         glGetShaderiv(result, GL_INFO_LOG_LENGTH, &info_log_length);
         std::string info_log(info_log_length, '\0');
@@ -123,8 +164,7 @@ GLuint create_shader(GLenum type, const char *source)
     return result;
 }
 
-GLuint create_program(GLuint vertex_shader, GLuint fragment_shader)
-{
+GLuint create_program(GLuint vertex_shader, GLuint fragment_shader) {
     GLuint result = glCreateProgram();
     glAttachShader(result, vertex_shader);
     glAttachShader(result, fragment_shader);
@@ -132,21 +172,17 @@ GLuint create_program(GLuint vertex_shader, GLuint fragment_shader)
 
     GLint status;
     glGetProgramiv(result, GL_LINK_STATUS, &status);
-    if (status != GL_TRUE)
-    {
+    if (status != GL_TRUE) {
         GLint info_log_length;
         glGetProgramiv(result, GL_INFO_LOG_LENGTH, &info_log_length);
         std::string info_log(info_log_length, '\0');
         glGetProgramInfoLog(result, info_log.size(), nullptr, info_log.data());
         throw std::runtime_error("Program linkage failed: " + info_log);
     }
-
     return result;
 }
 
-int main()
-try
-{
+int main() try {
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
         sdl2_fail("SDL_Init: ");
 
@@ -187,13 +223,23 @@ try
     auto fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
     auto program = create_program(vertex_shader, fragment_shader);
 
-    GLuint model_location = glGetUniformLocation(program, "model");
-    GLuint view_location = glGetUniformLocation(program, "view");
-    GLuint projection_location = glGetUniformLocation(program, "projection");
-    GLuint camera_position_location = glGetUniformLocation(program, "camera_position");
-    GLuint albedo_location = glGetUniformLocation(program, "albedo");
-    GLuint sun_direction_location = glGetUniformLocation(program, "sun_direction");
-    GLuint sun_color_location = glGetUniformLocation(program, "sun_color");
+    auto extra_vertex_shader = create_shader(GL_VERTEX_SHADER, extra_vertex_shader_source);
+    auto extra_fragment_shader = create_shader(GL_FRAGMENT_SHADER, extra_fragment_shader_source);
+    auto extra_program = create_program(extra_vertex_shader, extra_fragment_shader);
+
+    auto shadow_vertex_shader = create_shader(GL_VERTEX_SHADER, shadow_map_vertex_shader_source);
+    auto shadow_fragment_shader = create_shader(GL_FRAGMENT_SHADER, shadow_map_fragment_shader_source);
+    auto shadow_program = create_program(shadow_vertex_shader, shadow_fragment_shader);
+
+    GLint model_location = glGetUniformLocation(program, "model");
+    GLint view_location = glGetUniformLocation(program, "view");
+    GLint projection_location = glGetUniformLocation(program, "projection");
+    GLint camera_position_location = glGetUniformLocation(program, "camera_position");
+    GLint albedo_location = glGetUniformLocation(program, "albedo");
+    GLint sun_direction_location = glGetUniformLocation(program, "sun_direction");
+    GLint sun_color_location = glGetUniformLocation(program, "sun_color");
+    GLint shadow_projection_location_ = glGetUniformLocation(program, "shadow_projection");
+    GLint shadow_map_location = glGetUniformLocation(program, "shadow_map");
 
     std::string project_root = PROJECT_ROOT;
     std::string scene_path = project_root + "/buddha.obj";
@@ -216,6 +262,31 @@ try
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(obj_data::vertex), (void *)(12));
 
+    const int shadow_map_size = 1024;
+    GLuint tex;
+    glGenTextures(1, &tex);;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, shadow_map_size,
+                 shadow_map_size,0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    GLuint fbo;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+    glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, tex, 0);
+
+    assert(glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+    GLuint extra_fake_arr;
+    glGenVertexArrays(1, &extra_fake_arr);
+    GLint texture_location = glGetUniformLocation(extra_program, "tex");
+
+    GLint shadow_model_location = glGetUniformLocation(shadow_program, "model");
+    GLint shadow_projection_location = glGetUniformLocation(shadow_program, "projection");
+
+
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
     float time = 0.f;
@@ -223,36 +294,34 @@ try
     std::map<SDL_Keycode, bool> button_down;
 
     float camera_distance = 1.5f;
-    float camera_angle = glm::pi<float>();
+    auto camera_angle = glm::pi<float>();
 
-    bool running = true;
-    while (running)
+    while (true)
     {
-        for (SDL_Event event; SDL_PollEvent(&event);)
-            switch (event.type)
-            {
-            case SDL_QUIT:
-                running = false;
-                break;
-            case SDL_WINDOWEVENT:
-                switch (event.window.event)
-                {
-                case SDL_WINDOWEVENT_RESIZED:
-                    width = event.window.data1;
-                    height = event.window.data2;
+        bool running = true;
+        for (SDL_Event event; SDL_PollEvent(&event);) {
+            switch (event.type) {
+                case SDL_QUIT:
+                    running = false;
                     break;
-                }
-                break;
-            case SDL_KEYDOWN:
-                button_down[event.key.keysym.sym] = true;
-                break;
-            case SDL_KEYUP:
-                button_down[event.key.keysym.sym] = false;
-                break;
+                case SDL_WINDOWEVENT:
+                    switch (event.window.event) {
+                        case SDL_WINDOWEVENT_RESIZED:
+                            width = event.window.data1;
+                            height = event.window.data2;
+                            break;
+                    }
+                    break;
+                case SDL_KEYDOWN:
+                    button_down[event.key.keysym.sym] = true;
+                    break;
+                case SDL_KEYUP:
+                    button_down[event.key.keysym.sym] = false;
+                    break;
             }
+        }
 
-        if (!running)
-            break;
+        if (!running) break;
 
         auto now = std::chrono::high_resolution_clock::now();
         float dt = std::chrono::duration_cast<std::chrono::duration<float>>(now - last_frame_start).count();
@@ -269,12 +338,13 @@ try
         if (button_down[SDLK_RIGHT])
             camera_angle -= 2.f * dt;
 
-        glViewport(0, 0, width, height);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glClearColor(0.8f, 0.8f, 1.f, 0.f);
 
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_CULL_FACE);
+        auto light_Z = glm::vec3(0, -1, 0);
+        auto light_X = glm::vec3(1, 0, 0);
+        auto light_Y = glm::cross(light_X, light_Z);
+        glm::mat4 shadow_projection = glm::mat4(glm::transpose(
+                glm::mat3(light_X, light_Y, light_Z)));
+
 
         float near = 0.1f;
         float far = 100.f;
@@ -288,24 +358,50 @@ try
         view = glm::translate(view, {0.f, -0.5f, 0.f});
 
         float aspect = (float)height / (float)width;
-        glm::mat4 projection = glm::perspective(glm::pi<float>() / 3.f, (width * 1.f) / height, near, far);
-
+        glm::mat4 projection = glm::perspective(glm::pi<float>() / 3.f, 1.f / aspect, near, far);
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
-
         glm::vec3 sun_direction = glm::normalize(glm::vec3(std::sin(time * 0.5f), 2.f, std::cos(time * 0.5f)));
 
-        glUseProgram(program);
 
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+        glViewport(0, 0, shadow_map_size, shadow_map_size);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glClearColor(0.8f, 0.8f, 1.f, 0.f);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_FRONT);
+        glUseProgram(shadow_program);
+        glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+        glUniformMatrix4fv(shadow_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&shadow_projection));
+        glBindVertexArray(scene_vao);
+        glDrawElements(GL_TRIANGLES, scene.indices.size(), GL_UNSIGNED_INT, nullptr);
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glViewport(0, 0, width, height);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glClearColor(0.8f, 0.8f, 1.f, 0.f);
+
+        glCullFace(GL_BACK);
+        glUseProgram(program);
         glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(camera_position_location, 1, (float *)(&camera_position));
         glUniform3f(albedo_location, .8f, .7f, .6f);
         glUniform3f(sun_color_location, 1.f, 1.f, 1.f);
+        glUniform1i(shadow_map_location, 0);
+        glUniformMatrix4fv(shadow_projection_location_, 1, GL_FALSE, reinterpret_cast<float *>(&shadow_projection));
         glUniform3fv(sun_direction_location, 1, reinterpret_cast<float *>(&sun_direction));
-
         glBindVertexArray(scene_vao);
         glDrawElements(GL_TRIANGLES, scene.indices.size(), GL_UNSIGNED_INT, nullptr);
+
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
+        glUseProgram(extra_program);
+        glUniform1i(texture_location, 0);
+        glBindVertexArray(extra_fake_arr);
+        //glBindTexture(GL_TEXTURE_2D, tex);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
         SDL_GL_SwapWindow(window);
     }
