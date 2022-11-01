@@ -97,8 +97,8 @@ void main()
         float b = 0.0;
         for (int x = -3; x <= 3; ++x) {
             for (int y = -3; y <= 3; ++y) {
-                float k = exp(-(pow(x, 2) + pow(y, 2)) / 18.0);
-                a += k * texture(shadow_map, shadow_pos.xy).rg;
+                float k = exp(-(pow(x, 2) + pow(y, 2)) / 8.0);
+                a += k * texture(shadow_map, shadow_pos.xy + vec2(x, y) / textureSize(shadow_map, 0).xy).rg;
                 b += k;
             }
         }
@@ -222,7 +222,6 @@ GLuint create_program(GLuint vertex_shader, GLuint fragment_shader)
         glGetProgramInfoLog(result, info_log.size(), nullptr, info_log.data());
         throw std::runtime_error("Program linkage failed: " + info_log);
     }
-
     return result;
 }
 
@@ -325,8 +324,8 @@ int main() try
     GLuint shadow_map;
     glGenTextures(1, &shadow_map);
     glBindTexture(GL_TEXTURE_2D, shadow_map);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     //glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, shadow_map_resolution,
@@ -360,6 +359,25 @@ int main() try
     float view_elevation = glm::radians(45.f);
     float view_azimuth = 0.f;
     float camera_distance = 1.5f;
+
+    float x_bounds[2] = {1e18f, 0.0f};
+    float y_bounds[2] = {1e18f, 0.0f};
+    float z_bounds[2] = {1e18f, 0.0f};
+
+    for(auto _v : scene.vertices) {
+        x_bounds[0] = std::min(x_bounds[0], _v.position[0]);
+        y_bounds[0] = std::min(y_bounds[0], _v.position[1]);
+        z_bounds[0] = std::min(z_bounds[0], _v.position[2]);
+        x_bounds[1] = std::max(x_bounds[1], _v.position[0]);
+        y_bounds[1] = std::max(y_bounds[1], _v.position[1]);
+        z_bounds[1] = std::max(z_bounds[1], _v.position[2]);
+    }
+
+    std::vector<std::array<float, 3>> bounding_box;
+    for(float &i : x_bounds)
+        for(float &j : y_bounds)
+            for(float &k : z_bounds)
+                bounding_box.push_back({i, j, k});
 
     while (true)
     {
@@ -427,23 +445,25 @@ int main() try
         glm::vec3 light_x = glm::normalize(glm::cross(light_z, {0.f, 1.f, 0.f}));
         glm::vec3 light_y = glm::cross(light_x, light_z);
 
+        glm::vec3 c = glm::vec3((x_bounds[1] + x_bounds[0]) / 2.0,
+                                (y_bounds[1] + y_bounds[0]) / 2.0,
+                                (z_bounds[1] + z_bounds[0]) / 2.0);
+
         float dx = 0.f, dy = 0.f, dz = 0.f;
-        for(auto _v : scene.vertices) {
-            glm::vec3 v = glm::vec3(
-                    _v.position[0],
-                    _v.position[1],
-                    _v.position[2]);
+
+        for(auto _v : bounding_box) {
+            glm::vec3 v = glm::vec3(_v[0], _v[1], _v[2]) - c;
             dx = std::max(dx, glm::dot(v, light_x));
             dy = std::max(dy, glm::dot(v, light_y));
             dz = std::max(dz, glm::dot(v, light_z));
         }
 
-        glm::mat4 transform = glm::mat4(1.f);
-        for (int i = 0; i < 3; ++i) {
-            transform[i][0] = light_x[i] / dx;
-            transform[i][1] = light_y[i] / dy;
-            transform[i][2] = light_z[i] / dz;
-        }
+        glm::mat4 transform = glm::inverse(glm::mat4({
+            {dx * light_x.x,dx * light_x.y,dx * light_x.z,0.f},
+            {dy * light_y.x,dy * light_y.y,dy * light_y.z,0.f},
+            {dz * light_z.x,dz * light_z.y,dz * light_z.z,0.f},
+            {c.x,c.y,c.z,1.f}
+        }));
 
         glUseProgram(shadow_program);
         glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
