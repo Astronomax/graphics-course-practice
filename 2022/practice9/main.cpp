@@ -89,9 +89,31 @@ void main()
 
     bool in_shadow_texture = (shadow_pos.x > 0.0) && (shadow_pos.x < 1.0) && (shadow_pos.y > 0.0) && (shadow_pos.y < 1.0) && (shadow_pos.z > 0.0) && (shadow_pos.z < 1.0);
     float shadow_factor = 1.0;
-    if (in_shadow_texture)
-        shadow_factor = (texture(shadow_map, shadow_pos.xy).r < shadow_pos.z) ? 0.0 : 1.0;
+    if (in_shadow_texture) {
+        //shadow_factor = (texture(shadow_map, shadow_pos.xy).r + 0.05 < shadow_pos.z) ? 0.0 : 1.0;
+        //vec2 data = texture(shadow_map, shadow_pos.xy).rg;
 
+        vec2 a = vec2(0.0, 0.0);
+        float b = 0.0;
+        for (int x = -3; x <= 3; ++x) {
+            for (int y = -3; y <= 3; ++y) {
+                float k = exp(-(pow(x, 2) + pow(y, 2)) / 18.0);
+                a += k * texture(shadow_map, shadow_pos.xy).rg;
+                b += k;
+            }
+        }
+        vec2 data = a / b;
+
+        float mu = data.r;
+        float sigma = data.g - mu * mu;
+        float z = shadow_pos.z;
+        shadow_factor = (z - 0.005 < mu) ? 1.0 : sigma / (sigma + (z - mu) * (z - mu));
+        float delt = 0.125;
+        if(shadow_factor < delt)
+            shadow_factor = 0.0;
+        else
+            shadow_factor = (shadow_factor - delt) / (1.0 - delt);
+    }
     vec3 albedo = vec3(1.0, 1.0, 1.0);
 
     vec3 light = ambient;
@@ -135,7 +157,7 @@ layout (location = 0) out vec4 out_color;
 
 void main()
 {
-    out_color = vec4(texture(shadow_map, texcoord).rrr, 1.0);
+    out_color = texture(shadow_map, texcoord);
 }
 )";
 
@@ -156,8 +178,13 @@ void main()
 const char shadow_fragment_shader_source[] =
 R"(#version 330 core
 
+layout (location = 0) out vec4 out_color;
+
 void main()
-{}
+{
+    float z = gl_FragCoord.z;
+    out_color = vec4(z, z * z + 0.25 * (pow(dFdx(dFdx(z)), 2.0) + pow(dFdy(z), 2.0)), 0.0, 0.0);
+}
 )";
 
 GLuint create_shader(GLenum type, const char * source)
@@ -239,16 +266,16 @@ int main() try
     auto fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
     auto program = create_program(vertex_shader, fragment_shader);
 
-    GLuint model_location = glGetUniformLocation(program, "model");
-    GLuint view_location = glGetUniformLocation(program, "view");
-    GLuint projection_location = glGetUniformLocation(program, "projection");
-    GLuint transform_location = glGetUniformLocation(program, "transform");
+    GLint model_location = glGetUniformLocation(program, "model");
+    GLint view_location = glGetUniformLocation(program, "view");
+    GLint projection_location = glGetUniformLocation(program, "projection");
+    GLint transform_location = glGetUniformLocation(program, "transform");
 
-    GLuint ambient_location = glGetUniformLocation(program, "ambient");
-    GLuint light_direction_location = glGetUniformLocation(program, "light_direction");
-    GLuint light_color_location = glGetUniformLocation(program, "light_color");
+    GLint ambient_location = glGetUniformLocation(program, "ambient");
+    GLint light_direction_location = glGetUniformLocation(program, "light_direction");
+    GLint light_color_location = glGetUniformLocation(program, "light_color");
 
-    GLuint shadow_map_location = glGetUniformLocation(program, "shadow_map");
+    GLint shadow_map_location = glGetUniformLocation(program, "shadow_map");
 
     glUseProgram(program);
     glUniform1i(shadow_map_location, 0);
@@ -257,7 +284,7 @@ int main() try
     auto debug_fragment_shader = create_shader(GL_FRAGMENT_SHADER, debug_fragment_shader_source);
     auto debug_program = create_program(debug_vertex_shader, debug_fragment_shader);
 
-    GLuint debug_shadow_map_location = glGetUniformLocation(debug_program, "shadow_map");
+    GLint debug_shadow_map_location = glGetUniformLocation(debug_program, "shadow_map");
 
     glUseProgram(debug_program);
     glUniform1i(debug_shadow_map_location, 0);
@@ -266,8 +293,8 @@ int main() try
     auto shadow_fragment_shader = create_shader(GL_FRAGMENT_SHADER, shadow_fragment_shader_source);
     auto shadow_program = create_program(shadow_vertex_shader, shadow_fragment_shader);
 
-    GLuint shadow_model_location = glGetUniformLocation(shadow_program, "model");
-    GLuint shadow_transform_location = glGetUniformLocation(shadow_program, "transform");
+    GLint shadow_model_location = glGetUniformLocation(shadow_program, "model");
+    GLint shadow_transform_location = glGetUniformLocation(shadow_program, "transform");
 
     std::string project_root = PROJECT_ROOT;
     std::string scene_path = project_root + "/bunny.obj";
@@ -302,12 +329,23 @@ int main() try
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, shadow_map_resolution, shadow_map_resolution, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    //glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, shadow_map_resolution,
+    //shadow_map_resolution, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, shadow_map_resolution,
+                 shadow_map_resolution, 0, GL_RGBA, GL_FLOAT, nullptr);
+
+    GLuint render_buffer;
+    glGenRenderbuffers(1, &render_buffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, render_buffer);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, shadow_map_resolution, shadow_map_resolution);
+
 
     GLuint shadow_fbo;
     glGenFramebuffers(1, &shadow_fbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
-    glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, shadow_map, 0);
+    //glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, shadow_map, 0);
+    glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, shadow_map, 0);
+    glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, render_buffer);
     if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         throw std::runtime_error("Incomplete framebuffer!");
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
@@ -322,9 +360,10 @@ int main() try
     float view_elevation = glm::radians(45.f);
     float view_azimuth = 0.f;
     float camera_distance = 1.5f;
-    bool running = true;
-    while (running)
+
+    while (true)
     {
+        bool running = true;
         for (SDL_Event event; SDL_PollEvent(&event);) switch (event.type)
         {
         case SDL_QUIT:
@@ -351,8 +390,7 @@ int main() try
             break;
         }
 
-        if (!running)
-            break;
+        if (!running) break;
 
         auto now = std::chrono::high_resolution_clock::now();
         float dt = std::chrono::duration_cast<std::chrono::duration<float>>(now - last_frame_start).count();
@@ -375,6 +413,7 @@ int main() try
         glm::vec3 light_direction = glm::normalize(glm::vec3(std::cos(time * 0.5f), 1.f, std::sin(time * 0.5f)));
 
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
+        glClearColor(1.f, 1.f, 0.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glViewport(0, 0, shadow_map_resolution, shadow_map_resolution);
 
@@ -387,14 +426,23 @@ int main() try
         glm::vec3 light_z = -light_direction;
         glm::vec3 light_x = glm::normalize(glm::cross(light_z, {0.f, 1.f, 0.f}));
         glm::vec3 light_y = glm::cross(light_x, light_z);
-        float shadow_scale = 2.f;
+
+        float dx = 0.f, dy = 0.f, dz = 0.f;
+        for(auto _v : scene.vertices) {
+            glm::vec3 v = glm::vec3(
+                    _v.position[0],
+                    _v.position[1],
+                    _v.position[2]);
+            dx = std::max(dx, glm::dot(v, light_x));
+            dy = std::max(dy, glm::dot(v, light_y));
+            dz = std::max(dz, glm::dot(v, light_z));
+        }
 
         glm::mat4 transform = glm::mat4(1.f);
-        for (size_t i = 0; i < 3; ++i)
-        {
-            transform[i][0] = shadow_scale * light_x[i];
-            transform[i][1] = shadow_scale * light_y[i];
-            transform[i][2] = shadow_scale * light_z[i];
+        for (int i = 0; i < 3; ++i) {
+            transform[i][0] = light_x[i] / dx;
+            transform[i][1] = light_y[i] / dy;
+            transform[i][2] = light_z[i] / dz;
         }
 
         glUseProgram(shadow_program);
