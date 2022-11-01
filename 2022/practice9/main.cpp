@@ -106,8 +106,8 @@ void main()
 
         float mu = data.r;
         float sigma = data.g - mu * mu;
-        float z = shadow_pos.z;
-        shadow_factor = (z - 0.005 < mu) ? 1.0 : sigma / (sigma + (z - mu) * (z - mu));
+        float z = shadow_pos.z - 0.005;
+        shadow_factor = (z < mu) ? 1.0 : sigma / (sigma + (z - mu) * (z - mu));
         float delt = 0.125;
         if(shadow_factor < delt)
             shadow_factor = 0.0;
@@ -360,9 +360,12 @@ int main() try
     float view_azimuth = 0.f;
     float camera_distance = 1.5f;
 
-    float x_bounds[2] = {1e18f, 0.0f};
-    float y_bounds[2] = {1e18f, 0.0f};
-    float z_bounds[2] = {1e18f, 0.0f};
+    float x_bounds[2] = {std::numeric_limits<float>::infinity(),
+                         -std::numeric_limits<float>::infinity()};
+    float y_bounds[2] = {std::numeric_limits<float>::infinity(),
+                         -std::numeric_limits<float>::infinity()};
+    float z_bounds[2] = {std::numeric_limits<float>::infinity(),
+                         -std::numeric_limits<float>::infinity()};
 
     for(auto _v : scene.vertices) {
         x_bounds[0] = std::min(x_bounds[0], _v.position[0]);
@@ -449,7 +452,9 @@ int main() try
                                 (y_bounds[1] + y_bounds[0]) / 2.0,
                                 (z_bounds[1] + z_bounds[0]) / 2.0);
 
-        float dx = 0.f, dy = 0.f, dz = 0.f;
+        float dx = -std::numeric_limits<float>::infinity();
+        float dy = -std::numeric_limits<float>::infinity();
+        float dz = -std::numeric_limits<float>::infinity();
 
         for(auto _v : bounding_box) {
             glm::vec3 v = glm::vec3(_v[0], _v[1], _v[2]) - c;
