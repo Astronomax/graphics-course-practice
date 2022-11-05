@@ -29,6 +29,7 @@ set(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 add_executable(${TARGET_NAME} main.cpp
         tiny_obj_loader.h
         utils.hpp utils.cpp
+        texture_holder.hpp texture_holder.cpp
         obj_parser.hpp obj_parser.cpp
         stb_image.h stb_image.c)
 target_include_directories(${TARGET_NAME} PUBLIC

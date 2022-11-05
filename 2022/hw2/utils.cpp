@@ -81,3 +81,52 @@ SDL_GLContext create_context(SDL_Window *window) {
         throw std::runtime_error("OpenGL 3.3 is not supported");
     return gl_context;
 }
+
+std::vector<vertex> get_vertices(
+        const tinyobj::attrib_t &attrib,
+        const std::vector<tinyobj::shape_t> &shapes) {
+
+    std::vector<vertex> res;
+    for(auto &shape : shapes) {
+        for (auto &i: shape.mesh.indices) {
+            res.push_back({{
+                                   attrib.vertices[3 * i.vertex_index],
+                                   attrib.vertices[3 * i.vertex_index + 1],
+                                   attrib.vertices[3 * i.vertex_index + 2]
+                           }, {
+                                   attrib.normals[3 * i.normal_index],
+                                   attrib.normals[3 * i.normal_index + 1],
+                                   attrib.normals[3 * i.normal_index + 2]
+                           }, {
+                                   attrib.texcoords[2 * i.texcoord_index],
+                                   attrib.texcoords[2 * i.texcoord_index + 1]
+                           }
+                          });
+        }
+    }
+    return res;
+}
+
+bounding_box get_bounding_box(const std::vector<vertex> &scene) {
+    float x_bounds[2] = {std::numeric_limits<float>::infinity(),
+                         -std::numeric_limits<float>::infinity()};
+    float y_bounds[2] = {std::numeric_limits<float>::infinity(),
+                         -std::numeric_limits<float>::infinity()};
+    float z_bounds[2] = {std::numeric_limits<float>::infinity(),
+                         -std::numeric_limits<float>::infinity()};
+    for(auto &v : scene) {
+        x_bounds[0] = std::min(x_bounds[0], v.position[0]);
+        y_bounds[0] = std::min(y_bounds[0], v.position[1]);
+        z_bounds[0] = std::min(z_bounds[0], v.position[2]);
+        x_bounds[1] = std::max(x_bounds[1], v.position[0]);
+        y_bounds[1] = std::max(y_bounds[1], v.position[1]);
+        z_bounds[1] = std::max(z_bounds[1], v.position[2]);
+    }
+    bounding_box res;
+    for(int i = 0; i < 2; i++)
+        for(int j = 0; j < 2; j++)
+            for(int k = 0; k < 2; k++)
+                res[1 * i + 2 * j + 4 * k] =
+                        { x_bounds[i], y_bounds[j], z_bounds[k] };
+    return res;
+}
