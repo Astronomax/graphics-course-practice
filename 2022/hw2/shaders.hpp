@@ -58,12 +58,29 @@ uniform mat4 transform;
 uniform sampler2D shadow_map;
 uniform sampler2D tex;
 
+uniform float glossiness;
+uniform float power;
+uniform vec3 camera_position;
 
 in vec3 position;
 in vec3 normal;
 in vec2 texcoord;
 
 layout (location = 0) out vec4 out_color;
+
+float diffuse(vec3 direction) {
+    return max(0.0, dot(normal, direction));
+}
+
+float specular(vec3 direction) {
+    vec3 reflected_direction = 2.0 * normal *  dot(normal, direction) - direction;
+    vec3 camera_direction = normalize(camera_position - position);
+    return glossiness * pow(max(0.0, dot(reflected_direction, camera_direction)), power);
+}
+
+float phong(vec3 direction) {
+    return diffuse(direction) + specular(direction);
+}
 
 void main()
 {
@@ -75,7 +92,7 @@ void main()
         (shadow_pos.y > 0.0) && (shadow_pos.y < 1.0) &&
         (shadow_pos.z > 0.0) && (shadow_pos.z < 1.0);
 
-float shadow_factor = 1.0;
+    float shadow_factor = 1.0;
     if (in_shadow_texture) {
         vec2 a = vec2(0.0, 0.0);
         float b = 0.0;
@@ -100,10 +117,8 @@ float shadow_factor = 1.0;
     }
 
     vec3 albedo = vec3(texture(tex, texcoord));
-    vec3 light = ambient;
-    light += light_color * max(0.0, dot(normal, light_direction)) * shadow_factor;
+    vec3 light = ambient + light_color * phong(light_direction) * shadow_factor;
     vec3 color = albedo * light;
-
     out_color = vec4(color, 1.0);
 }
 )";
