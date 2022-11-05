@@ -15,13 +15,23 @@
 #include <array>
 #include <vector>
 
+#define GLM_FORCE_SWIZZLE
+#define GLM_ENABLE_EXPERIMENTAL
+
+#include <glm/vec3.hpp>
+#include <glm/mat4x4.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/scalar_constants.hpp>
+#include <glm/gtx/string_cast.hpp>
+
 struct vertex {
     std::array<float, 3> position;
     std::array<float, 3> normal;
     std::array<float, 2> texcoord;
 };
 
-typedef std::array<std::array<float, 3>, 8> bounding_box;
+typedef std::array<glm::vec3, 8> bounding_box;
 
 GLuint create_shader(GLenum type, const char *source);
 GLuint create_program(GLuint vertex_shader, GLuint fragment_shader);
