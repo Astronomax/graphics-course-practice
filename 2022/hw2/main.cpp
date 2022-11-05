@@ -126,7 +126,7 @@ int main() try {
     float camera_angle = glm::pi<float>() / 2.f;
     float view_elevation = glm::pi<float>() / 4.f;
 
-    glm::vec3 light_direction = glm::normalize(glm::vec3(0.1f, 1.f, 0.1f));
+    glm::vec3 light_direction = glm::normalize(glm::vec3(-0.3f, 1.f, 0.2f));
     glm::vec3 light_z = -light_direction;
     glm::vec3 light_x = glm::normalize(glm::cross(light_z, {0.f, 1.f, 0.f}));
     glm::vec3 light_y = glm::cross(light_x, light_z);
