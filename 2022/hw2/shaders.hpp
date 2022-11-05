@@ -41,7 +41,7 @@ void main()
     gl_Position = projection * view * model * vec4(in_position, 1.0);
     position = (model * vec4(in_position, 1.0)).xyz;
     normal = normalize((model * vec4(in_normal, 0.0)).xyz);
-    texcoord = vec2(in_texcoord[0], in_texcoord[1]);
+    texcoord = vec2(in_texcoord[0], 1.f - in_texcoord[1]);
 }
 )";
 
