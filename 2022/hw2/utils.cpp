@@ -90,18 +90,18 @@ std::vector<vertex> get_vertices(
     for(auto &shape : shapes) {
         for (auto &i: shape.mesh.indices) {
             res.push_back({{
-                                   attrib.vertices[3 * i.vertex_index],
-                                   attrib.vertices[3 * i.vertex_index + 1],
-                                   attrib.vertices[3 * i.vertex_index + 2]
-                           }, {
-                                   attrib.normals[3 * i.normal_index],
-                                   attrib.normals[3 * i.normal_index + 1],
-                                   attrib.normals[3 * i.normal_index + 2]
-                           }, {
-                                   attrib.texcoords[2 * i.texcoord_index],
-                                   attrib.texcoords[2 * i.texcoord_index + 1]
-                           }
-                          });
+                    attrib.vertices[3 * i.vertex_index],
+                    attrib.vertices[3 * i.vertex_index + 1],
+                    attrib.vertices[3 * i.vertex_index + 2]
+                }, {
+                    attrib.normals[3 * i.normal_index],
+                    attrib.normals[3 * i.normal_index + 1],
+                    attrib.normals[3 * i.normal_index + 2]
+                }, {
+                    attrib.texcoords[2 * i.texcoord_index],
+                    attrib.texcoords[2 * i.texcoord_index + 1]
+                }
+            });
         }
     }
     return res;
@@ -127,6 +127,6 @@ bounding_box get_bounding_box(const std::vector<vertex> &scene) {
         for(int j = 0; j < 2; j++)
             for(int k = 0; k < 2; k++)
                 res[1 * i + 2 * j + 4 * k] =
-                        { x_bounds[i], y_bounds[j], z_bounds[k] };
+                        glm::vec3(x_bounds[i], y_bounds[j], z_bounds[k]);
     return res;
 }
