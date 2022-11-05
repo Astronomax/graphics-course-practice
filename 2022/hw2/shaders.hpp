@@ -21,57 +21,91 @@ const char shadow_fragment_shader_source[] = R"(#version 330 core
     }
 )";
 
-const char vertex_shader_source[] = R"(#version 330 core
-    uniform mat4 model;
-    uniform mat4 view;
-    uniform mat4 projection;
+const char vertex_shader_source[] =
+        R"(#version 330 core
 
-    layout (location = 0) in vec3 in_position;
-    layout (location = 1) in vec3 in_normal;
-    layout (location = 2) in vec2 in_texcoord;
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
 
-    out vec3 position;
-    out vec3 normal;
-    out vec2 texcoord;
+layout (location = 0) in vec3 in_position;
+layout (location = 1) in vec3 in_normal;
+layout (location = 2) in vec2 in_texcoord;
 
-    void main() {
-        position = (model * vec4(in_position, 1.0)).xyz;
-        gl_Position = projection * view * vec4(position, 1.0);
-        normal = normalize(mat3(model) * in_normal);
-        texcoord = vec2(in_texcoord[0], in_texcoord[1]);
-    }
+out vec3 position;
+out vec3 normal;
+out vec2 texcoord;
+
+void main()
+{
+    gl_Position = projection * view * model * vec4(in_position, 1.0);
+    position = (model * vec4(in_position, 1.0)).xyz;
+    normal = normalize((model * vec4(in_normal, 0.0)).xyz);
+    texcoord = vec2(in_texcoord[0], in_texcoord[1]);
+}
 )";
 
-const char fragment_shader_source[] = R"(#version 330 core
-    uniform vec3 camera_position;
-    uniform vec3 sun_direction;
-    uniform vec3 sun_color;
-    uniform sampler2D tex;
+const char fragment_shader_source[] =
+        R"(#version 330 core
 
-    in vec3 position;
-    in vec3 normal;
-    in vec2 texcoord;
+uniform vec3 ambient;
 
-    layout (location = 0) out vec4 out_color;
+uniform vec3 light_direction;
+uniform vec3 light_color;
 
-    vec3 diffuse(vec3 albedo, vec3 direction) {
-        return albedo * max(0.0, dot(normal, direction));
+uniform mat4 transform;
+
+uniform sampler2D shadow_map;
+uniform sampler2D tex;
+
+
+in vec3 position;
+in vec3 normal;
+in vec2 texcoord;
+
+layout (location = 0) out vec4 out_color;
+
+void main()
+{
+    vec4 shadow_pos = transform * vec4(position, 1.0);
+    shadow_pos /= shadow_pos.w;
+    shadow_pos = shadow_pos * 0.5 + vec4(0.5);
+
+    bool in_shadow_texture = (shadow_pos.x > 0.0) && (shadow_pos.x < 1.0) &&
+        (shadow_pos.y > 0.0) && (shadow_pos.y < 1.0) &&
+        (shadow_pos.z > 0.0) && (shadow_pos.z < 1.0);
+
+float shadow_factor = 1.0;
+    if (in_shadow_texture) {
+        vec2 a = vec2(0.0, 0.0);
+        float b = 0.0;
+        for (int x = -3; x <= 3; ++x) {
+            for (int y = -3; y <= 3; ++y) {
+                float k = exp(-(pow(x, 2) + pow(y, 2)) / 8.0);
+                a += k * texture(shadow_map, shadow_pos.xy + vec2(x, y) / textureSize(shadow_map, 0).xy).rg;
+                b += k;
+            }
+        }
+        vec2 data = a / b;
+
+        float mu = data.r;
+        float sigma = data.g - mu * mu;
+        float z = shadow_pos.z - 0.005;
+        shadow_factor = (z < mu) ? 1.0 : sigma / (sigma + (z - mu) * (z - mu));
+        float delt = 0.125;
+        if(shadow_factor < delt)
+            shadow_factor = 0.0;
+        else
+            shadow_factor = (shadow_factor - delt) / (1.0 - delt);
     }
-    vec3 specular(vec3 albedo, vec3 direction) {
-        float power = 64.0;
-        vec3 reflected_direction = 2.0 * normal * dot(normal, direction) - direction;
-        vec3 view_direction = normalize(camera_position - position);
-        return albedo * pow(max(0.0, dot(reflected_direction, view_direction)), power);
-    }
-    vec3 phong(vec3 albedo, vec3 direction) {
-        return diffuse(albedo, direction) + specular(albedo, direction);
-    }
-    void main() {
-        float ambient_light = 0.2;
-        vec3 albedo = vec3(texture(tex, texcoord));
-        vec3 color = albedo * ambient_light + sun_color * phong(albedo, sun_direction);
-        out_color = vec4(color, 1.0);
-    }
+
+    vec3 albedo = vec3(texture(tex, texcoord));
+    vec3 light = ambient;
+    light += light_color * max(0.0, dot(normal, light_direction)) * shadow_factor;
+    vec3 color = albedo * light;
+
+    out_color = vec4(color, 1.0);
+}
 )";
 
 #endif //HW2_SHADERS_HPP
