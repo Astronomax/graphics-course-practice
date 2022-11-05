@@ -1,4 +1,5 @@
 #define TINYOBJLOADER_IMPLEMENTATION
+//#include "tiny_obj_loader.h"
 
 #ifdef WIN32
 #include <SDL.h>
@@ -14,7 +15,7 @@
 #include <iostream>
 #include <chrono>
 #include <vector>
-#include "tiny_obj_loader.h"
+
 #include "obj_parser.hpp"
 #include "stb_image.h"
 
@@ -31,12 +32,7 @@
 
 #include "shaders.hpp"
 #include "utils.hpp"
-
-struct vertex {
-    std::array<float, 3> position;
-    std::array<float, 3> normal;
-    std::array<float, 2> texcoord;
-};
+#include "texture_holder.hpp"
 
 int main() try {
     auto *window = create_window("Homework 2");
@@ -56,17 +52,17 @@ int main() try {
     auto fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
     auto program = create_program(vertex_shader, fragment_shader);
 
-    GLuint model_location = glGetUniformLocation(program, "model");
-    GLuint view_location = glGetUniformLocation(program, "view");
-    GLuint projection_location = glGetUniformLocation(program, "projection");
-    GLuint camera_position_location = glGetUniformLocation(program, "camera_position");
-    GLuint albedo_location = glGetUniformLocation(program, "albedo");
-    GLuint sun_direction_location = glGetUniformLocation(program, "sun_direction");
-    GLuint sun_color_location = glGetUniformLocation(program, "sun_color");
-    GLuint texture_location = glGetUniformLocation(program, "tex");
-    GLint shadow_projection_location_ = glGetUniformLocation(program, "shadow_projection");
+    GLint model_location = glGetUniformLocation(program, "model");
+    GLint view_location = glGetUniformLocation(program, "view");
+    GLint projection_location = glGetUniformLocation(program, "projection");
+    GLint texture_location = glGetUniformLocation(program, "tex");
     GLint shadow_map_location = glGetUniformLocation(program, "shadow_map");
-
+    GLint transform_location = glGetUniformLocation(program, "transform");
+    GLint ambient_location = glGetUniformLocation(program, "ambient");
+    GLint light_direction_location = glGetUniformLocation(program, "light_direction");
+    GLint light_color_location = glGetUniformLocation(program, "light_color");
+    glUseProgram(program);
+    glUniform1i(shadow_map_location, 1);
 
     std::string project_root = PROJECT_ROOT;
     std::string scene_path = project_root + "/sponza/sponza.obj";
@@ -77,48 +73,20 @@ int main() try {
     std::vector<tinyobj::material_t> materials;
     tinyobj::LoadObj(&attrib, &shapes, &materials, nullptr, scene_path.c_str(), materials_dir.c_str());
 
-    std::map<std::string, std::pair<GLuint, GLint>> textures;
+    texture_holder textures(2);
     for(auto &material : materials) {
-        GLint unit = (GLint)textures.size() + 1;
-        if(material.ambient_texname.empty())
-            continue;
-        if(textures.find(material.ambient_texname) != textures.end())
-            continue;
-        glGenTextures(1, &textures[material.ambient_texname].first);
-        textures[material.ambient_texname].second = unit;
-        glActiveTexture(GL_TEXTURE0 + unit);
-        glBindTexture(GL_TEXTURE_2D, textures[material.ambient_texname].first);
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        int x, y, channels_in_file;
         std::string texture_path = materials_dir + material.ambient_texname;
         std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
-        unsigned char *pixels_ = stbi_load(texture_path.c_str(),
-                                           &x, &y, &channels_in_file, 4);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y,
-                     0, GL_RGBA, GL_UNSIGNED_BYTE, pixels_);
-        glGenerateMipmap(GL_TEXTURE_2D);
-        stbi_image_free(pixels_);
+        textures.load_texture(texture_path);
     }
+    auto vertices = get_vertices(attrib, shapes);
+    auto bounding_box = get_bounding_box(vertices);
 
-    std::vector<vertex> vertices;
-    for(auto &shape : shapes) {
-        for (auto &i: shape.mesh.indices) {
-            vertices.push_back({{
-                    attrib.vertices[3 * i.vertex_index],
-                    attrib.vertices[3 * i.vertex_index + 1],
-                    attrib.vertices[3 * i.vertex_index + 2]
-                }, {
-                    attrib.normals[3 * i.normal_index],
-                    attrib.normals[3 * i.normal_index + 1],
-                    attrib.normals[3 * i.normal_index + 2]
-                }, {
-                    attrib.texcoords[2 * i.texcoord_index],
-                    attrib.texcoords[2 * i.texcoord_index + 1]
-                }
-            });
-        }
+    glm::vec3 c = glm::vec3(0.f, 0.f, 0.f);
+    for(auto &v : bounding_box) {
+        c.x += v[0]; c.y += v[1]; c.z += v[2];
     }
+    c /= 8.f;
 
     GLuint vao, vbo;
     glGenVertexArrays(1, &vao);
@@ -133,23 +101,64 @@ int main() try {
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*) 24);
 
+    GLsizei shadow_map_resolution = 1024;
+    GLuint shadow_map, render_buffer, shadow_fbo;
+    glGenTextures(1, &shadow_map);
+    glGenRenderbuffers(1, &render_buffer);
+    glGenFramebuffers(1, &shadow_fbo);
+    glActiveTexture(GL_TEXTURE0 + 1);
+    glBindTexture(GL_TEXTURE_2D, shadow_map);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, shadow_map_resolution,
+                 shadow_map_resolution, 0, GL_RGBA, GL_FLOAT, nullptr);
+    glBindRenderbuffer(GL_RENDERBUFFER, render_buffer);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
+                          shadow_map_resolution, shadow_map_resolution);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
+    glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, shadow_map, 0);
+    glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, render_buffer);
+    if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        throw std::runtime_error("Incomplete framebuffer!");
+
     auto last_frame_start = std::chrono::high_resolution_clock::now();
     float time = 0.f;
     std::map<SDL_Keycode, bool> button_down;
     float camera_distance = 1000.f;
     float camera_angle = glm::pi<float>() / 2.f;
+    float view_elevation = glm::radians(45.f);
+
+    glm::vec3 light_direction = glm::normalize(glm::vec3(0.1f, 1.f, 0.1f));
+    glm::vec3 light_z = -light_direction;
+    glm::vec3 light_x = glm::normalize(glm::cross(light_z, {0.f, 1.f, 0.f}));
+    glm::vec3 light_y = glm::cross(light_x, light_z);
+    float dx = -std::numeric_limits<float>::infinity();
+    float dy = -std::numeric_limits<float>::infinity();
+    float dz = -std::numeric_limits<float>::infinity();
+    for(auto _v : bounding_box) {
+        glm::vec3 v = glm::vec3(_v[0], _v[1], _v[2]) - c;
+        dx = std::max(dx, glm::dot(v, light_x));
+        dy = std::max(dy, glm::dot(v, light_y));
+        dz = std::max(dz, glm::dot(v, light_z));
+    }
+    glm::mat4 transform = glm::inverse(glm::mat4({
+        {dx * light_x.x, dx * light_x.y, dx * light_x.z, 0.f},
+        {dy * light_y.x, dy * light_y.y, dy * light_y.z, 0.f},
+        {dz * light_z.x, dz * light_z.y, dz * light_z.z, 0.f},
+        {c.x, c.y, c.z, 1.f}
+    }));
 
     bool running = true;
     while (true) {
         for (SDL_Event event; SDL_PollEvent(&event);)
-            switch (event.type)
-            {
+            switch (event.type) {
                 case SDL_QUIT:
                     running = false;
                     break;
                 case SDL_WINDOWEVENT:
-                    switch (event.window.event)
-                    {
+                    switch (event.window.event) {
                         case SDL_WINDOWEVENT_RESIZED:
                             width = event.window.data1;
                             height = event.window.data2;
@@ -175,53 +184,80 @@ int main() try {
             camera_distance -= 600.f * dt;
         if (button_down[SDLK_DOWN])
             camera_distance += 600.f * dt;
-
-        if (button_down[SDLK_LEFT])
+        if (button_down[SDLK_a])
             camera_angle += 2.f * dt;
-        if (button_down[SDLK_RIGHT])
+        if (button_down[SDLK_d])
             camera_angle -= 2.f * dt;
+        if (button_down[SDLK_w])
+            view_elevation += 2.f * dt;
+        if (button_down[SDLK_s])
+            view_elevation -= 2.f * dt;
 
-        glViewport(0, 0, width, height);
+        glm::mat4 model(1.f);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
+        glClearColor(1.f, 1.f, 0.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glClearColor(0.8f, 0.8f, 1.f, 0.f);
-
+        glViewport(0, 0, shadow_map_resolution, shadow_map_resolution);
         glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
         glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        glUseProgram(shadow_program);
+        glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+        glUniformMatrix4fv(shadow_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform));
+        glBindVertexArray(vao);
+        GLint current_block = 0;
+        for(auto &shape : shapes) {
+            auto material = materials[shape.mesh.material_ids[0]];
+            std::string texture_path = materials_dir + material.ambient_texname;
+            std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
+            textures.load_texture(texture_path);
+            glUniform1i(texture_location, textures.get_texture(texture_path));
+            glDrawArrays(GL_TRIANGLES, current_block, (GLint)shape.mesh.indices.size());
+            current_block += (GLint)shape.mesh.indices.size();
+        }
+        glBindTexture(GL_TEXTURE_2D, shadow_map);
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glViewport(0, 0, width, height);
+        glClearColor(0.8f, 0.8f, 0.9f, 0.f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
 
         float near = 0.1f;
         float far = 3000.f;
 
-        glm::mat4 model(1.f);
-
         glm::mat4 view(1.f);
         view = glm::translate(view, {0.f, 0.f, -camera_distance});
-        view = glm::rotate(view, glm::pi<float>() / 6.f, {1.f, 0.f, 0.f});
+        view = glm::rotate(view, view_elevation, {1.f, 0.f, 0.f});
         view = glm::rotate(view, camera_angle, {0.f, 1.f, 0.f});
         view = glm::translate(view, {0.f, -0.5f, 0.f});
-
-        float aspect = (float)height / (float)width;
-        glm::mat4 projection = glm::perspective(glm::pi<float>() / 3.f, 1.f / aspect, near, far);
-        glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
-        glm::vec3 sun_direction = glm::normalize(glm::vec3(std::sin(time * 0.5f), 2.f, std::cos(time * 0.5f)));
+        glm::mat4 projection = glm::mat4(1.f);
+        projection = glm::perspective(glm::pi<float>() / 2.f, (1.f * width) / height, near, far);
 
         glUseProgram(program);
         glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
-        glUniform3fv(camera_position_location, 1, (float *)(&camera_position));
-        glUniform3f(albedo_location, .8f, .7f, .6f);
-        glUniform3f(sun_color_location, 1.f, 1.f, 1.f);
-        glUniform3fv(sun_direction_location, 1, reinterpret_cast<float *>(&sun_direction));
-        glBindVertexArray(vao);
+        glUniformMatrix4fv(transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform));
 
-        GLint i = 0;
+        glUniform3f(ambient_location, 0.2f, 0.2f, 0.2f);
+        glUniform3fv(light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
+        glUniform3f(light_color_location, 0.8f, 0.8f, 0.8f);
+
+        current_block = 0;
         for(auto &shape : shapes) {
             auto material = materials[shape.mesh.material_ids[0]];
-            if(!material.ambient_texname.empty())
-                assert(textures.find(material.ambient_texname) != textures.end());
-            glUniform1i(texture_location, textures[material.ambient_texname].second);
-            glDrawArrays(GL_TRIANGLES, i, (GLint)shape.mesh.indices.size());
-            i += (GLint)shape.mesh.indices.size();
+            std::string texture_path = materials_dir + material.ambient_texname;
+            std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
+            textures.load_texture(texture_path);
+            glUniform1i(texture_location, textures.get_texture(texture_path));
+            glDrawArrays(GL_TRIANGLES, current_block, (GLint)shape.mesh.indices.size());
+            current_block += (GLint)shape.mesh.indices.size();
         }
 
         SDL_GL_SwapWindow(window);
