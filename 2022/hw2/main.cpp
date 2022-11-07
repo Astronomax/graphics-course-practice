@@ -35,7 +35,7 @@
 #include "utils.hpp"
 #include "texture_holder.hpp"
 
-int main() try {
+int main(int argc, char **argv) try {
     auto *window = create_window("Homework 2");
     auto gl_context = create_context(window);
     int width, height;
@@ -47,6 +47,7 @@ int main() try {
 
     GLint shadow_model_location = glGetUniformLocation(shadow_program, "model");
     GLint shadow_transform_location = glGetUniformLocation(shadow_program, "transform");
+    GLint alpha_texture_location = glGetUniformLocation(shadow_program, "alpha_texture");
 
     auto vertex_shader = create_shader(GL_VERTEX_SHADER, vertex_shader_source);
     auto fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
@@ -55,7 +56,7 @@ int main() try {
     GLint model_location = glGetUniformLocation(program, "model");
     GLint view_location = glGetUniformLocation(program, "view");
     GLint projection_location = glGetUniformLocation(program, "projection");
-    GLint texture_location = glGetUniformLocation(program, "tex");
+    GLint texture_location = glGetUniformLocation(program, "ambient_texture");
     GLint shadow_map_location = glGetUniformLocation(program, "shadow_map");
     GLint transform_location = glGetUniformLocation(program, "transform");
     GLint ambient_location = glGetUniformLocation(program, "ambient");
@@ -66,17 +67,19 @@ int main() try {
     GLint camera_position_location = glGetUniformLocation(program, "camera_position");
 
     std::string project_root = PROJECT_ROOT;
-    std::string scene_path = project_root + "/sponza/sponza.obj";
-    std::string materials_dir = project_root + "/sponza/";
+
+    std::string scene_dir = project_root + std::string(argv[1]);
+    std::string obj_path = scene_dir + std::string(argv[2]);
+
 
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
-    tinyobj::LoadObj(&attrib, &shapes, &materials, nullptr, scene_path.c_str(), materials_dir.c_str());
+    tinyobj::LoadObj(&attrib, &shapes, &materials, nullptr, obj_path.c_str(), scene_dir.c_str());
 
     texture_holder textures(2);
     for(auto &material : materials) {
-        std::string texture_path = materials_dir + material.ambient_texname;
+        std::string texture_path = scene_dir + material.ambient_texname;
         std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
         textures.load_texture(texture_path);
     }
@@ -140,11 +143,11 @@ int main() try {
         dz = std::max(dz, glm::dot(v, light_z));
     }
     glm::mat4 transform = glm::inverse(glm::mat4({
-        {dx * light_x.x, dx * light_x.y, dx * light_x.z, 0.f},
-        {dy * light_y.x, dy * light_y.y, dy * light_y.z, 0.f},
-        {dz * light_z.x, dz * light_z.y, dz * light_z.z, 0.f},
-        {c.x, c.y, c.z, 1.f}
-    }));
+                                                         {dx * light_x.x, dx * light_x.y, dx * light_x.z, 0.f},
+                                                         {dy * light_y.x, dy * light_y.y, dy * light_y.z, 0.f},
+                                                         {dz * light_z.x, dz * light_z.y, dz * light_z.z, 0.f},
+                                                         {c.x, c.y, c.z, 1.f}
+                                                 }));
 
     bool running = true;
     while (true) {
@@ -202,7 +205,17 @@ int main() try {
         glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
         glUniformMatrix4fv(shadow_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform));
         glBindVertexArray(vao);
-        glDrawArrays(GL_TRIANGLES, 0, (GLint)vertices.size());
+
+        GLint current_block = 0;
+        for(auto &shape : shapes) {
+            auto material = materials[shape.mesh.material_ids[0]];
+            std::string texture_path = scene_dir + material.alpha_texname;
+            std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
+            textures.load_texture(texture_path);
+            glUniform1i(alpha_texture_location, textures.get_texture(texture_path));
+            glDrawArrays(GL_TRIANGLES, current_block, (GLint)shape.mesh.indices.size());
+            current_block += (GLint)shape.mesh.indices.size();
+        }
 
         glBindTexture(GL_TEXTURE_2D, shadow_map);
         glGenerateMipmap(GL_TEXTURE_2D);
@@ -240,10 +253,10 @@ int main() try {
         glUniform3fv(camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
         glUniform1i(shadow_map_location, 1);
 
-        GLint current_block = 0;
+        current_block = 0;
         for(auto &shape : shapes) {
             auto material = materials[shape.mesh.material_ids[0]];
-            std::string texture_path = materials_dir + material.ambient_texname;
+            std::string texture_path = scene_dir + material.ambient_texname;
             std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
             textures.load_texture(texture_path);
             glUniform1f(power_location, material.shininess);
