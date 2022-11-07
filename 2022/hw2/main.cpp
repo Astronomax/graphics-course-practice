@@ -129,27 +129,7 @@ int main(int argc, char **argv) try {
     float camera_angle = glm::pi<float>() / 2.f;
     float view_elevation = glm::pi<float>() / 4.f;
 
-    glm::vec3 light_direction = glm::normalize(glm::vec3(-0.3f, 1.f, 0.2f));
-    glm::vec3 light_z = -light_direction;
-    glm::vec3 light_x = glm::normalize(glm::cross(light_z, {0.f, 1.f, 0.f}));
-    glm::vec3 light_y = glm::cross(light_x, light_z);
-    float dx = -std::numeric_limits<float>::infinity();
-    float dy = -std::numeric_limits<float>::infinity();
-    float dz = -std::numeric_limits<float>::infinity();
-    for(auto _v : bounding_box) {
-        glm::vec3 v = _v - c;
-        dx = std::max(dx, glm::dot(v, light_x));
-        dy = std::max(dy, glm::dot(v, light_y));
-        dz = std::max(dz, glm::dot(v, light_z));
-    }
-    glm::mat4 transform = glm::inverse(glm::mat4({
-                                                         {dx * light_x.x, dx * light_x.y, dx * light_x.z, 0.f},
-                                                         {dy * light_y.x, dy * light_y.y, dy * light_y.z, 0.f},
-                                                         {dz * light_z.x, dz * light_z.y, dz * light_z.z, 0.f},
-                                                         {c.x, c.y, c.z, 1.f}
-                                                 }));
-
-    bool running = true;
+    bool running = true, paused = false;
     while (true) {
         for (SDL_Event event; SDL_PollEvent(&event);)
             switch (event.type) {
@@ -166,6 +146,8 @@ int main(int argc, char **argv) try {
                     break;
                 case SDL_KEYDOWN:
                     button_down[event.key.keysym.sym] = true;
+                    if(event.key.keysym.sym == SDLK_SPACE)
+                        paused = !paused;
                     break;
                 case SDL_KEYUP:
                     button_down[event.key.keysym.sym] = false;
@@ -177,7 +159,6 @@ int main(int argc, char **argv) try {
         auto now = std::chrono::high_resolution_clock::now();
         float dt = std::chrono::duration_cast<std::chrono::duration<float>>(now - last_frame_start).count();
         last_frame_start = now;
-        time += dt;
 
         if (button_down[SDLK_UP])
             camera_distance -= 600.f * dt;
@@ -191,6 +172,29 @@ int main(int argc, char **argv) try {
             view_elevation += 2.f * dt;
         if (button_down[SDLK_s])
             view_elevation -= 2.f * dt;
+
+        if (!paused) time += dt;
+
+        glm::vec3 light_direction = glm::normalize(glm::vec3(-0.3f, 1.f, 0.2f * cos(time)));
+        glm::vec3 light_z = -light_direction;
+        glm::vec3 light_x = glm::normalize(glm::cross(light_z, {0.f, 1.f, 0.f}));
+        glm::vec3 light_y = glm::cross(light_x, light_z);
+        float dx = -std::numeric_limits<float>::infinity();
+        float dy = -std::numeric_limits<float>::infinity();
+        float dz = -std::numeric_limits<float>::infinity();
+        for(auto _v : bounding_box) {
+            glm::vec3 v = _v - c;
+            dx = std::max(dx, glm::dot(v, light_x));
+            dy = std::max(dy, glm::dot(v, light_y));
+            dz = std::max(dz, glm::dot(v, light_z));
+        }
+        glm::mat4 transform = glm::inverse(glm::mat4({
+                                                             {dx * light_x.x, dx * light_x.y, dx * light_x.z, 0.f},
+                                                             {dy * light_y.x, dy * light_y.y, dy * light_y.z, 0.f},
+                                                             {dz * light_z.x, dz * light_z.y, dz * light_z.z, 0.f},
+                                                             {c.x, c.y, c.z, 1.f}
+                                                     }));
+
 
         glm::mat4 model(1.f);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
