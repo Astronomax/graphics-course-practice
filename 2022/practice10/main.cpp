@@ -29,7 +29,7 @@
 
 std::string to_string(std::string_view str)
 {
-    return std::string(str.begin(), str.end());
+    return { str.begin(), str.end() };
 }
 
 void sdl2_fail(std::string_view message)
@@ -41,6 +41,43 @@ void glew_fail(std::string_view message, GLenum error)
 {
     throw std::runtime_error(to_string(message) + reinterpret_cast<const char *>(glewGetErrorString(error)));
 }
+
+const GLchar *environment_vertex_shader_source = R"(#version 330 core
+    const vec2 VERTICES[4] = vec2[4](
+        vec2(-1.0, -1.0),
+        vec2(1.0, -1.0),
+        vec2(-1.0, 1.0),
+        vec2(1.0, 1.0)
+    );
+
+    uniform mat4 view_projection_inverse;
+
+    out vec3 position;
+
+    void main() {
+        gl_Position = vec4(VERTICES[gl_VertexID], 0.0, 1.0);
+        vec4 clip_space = view_projection_inverse * gl_Position;
+        position = clip_space.xyz / clip_space.w;
+    }
+)";
+
+const GLchar *environment_fragment_shader_source = R"(#version 330 core
+    layout (location = 0) out vec4 out_color;
+    uniform vec3 camera_position;
+    uniform sampler2D environment_map_texture;
+
+    in vec3 position;
+
+    const float PI = 3.141592653589793;
+
+    void main() {
+        vec3 direction = position - camera_position;
+        vec2 env_map_coord = vec2(atan(direction.z, direction.x) / PI * 0.5 + 0.5,
+                            -atan(direction.y, length(direction.xz)) / PI + 0.5);
+        vec3 env_color = texture(environment_map_texture, env_map_coord).rgb;
+        out_color = vec4(env_color, 1.0);
+    }
+)";
 
 const char vertex_shader_source[] =
 R"(#version 330 core
@@ -257,9 +294,20 @@ int main() try
 
     glClearColor(0.8f, 0.8f, 1.f, 0.f);
 
+    auto environment_vertex_shader = create_shader(GL_VERTEX_SHADER, environment_vertex_shader_source);
+    auto environment_fragment_shader = create_shader(GL_FRAGMENT_SHADER, environment_fragment_shader_source);
+    auto environment_program = create_program(environment_vertex_shader, environment_fragment_shader);
+
+    GLuint view_projection_inverse_location = glGetUniformLocation(environment_program, "view_projection_inverse");
+    GLuint _camera_position_location = glGetUniformLocation(environment_program, "camera_position");
+    GLuint _environment_map_texture_location = glGetUniformLocation(environment_program, "environment_map_texture");
+
     auto vertex_shader = create_shader(GL_VERTEX_SHADER, vertex_shader_source);
     auto fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
     auto program = create_program(vertex_shader, fragment_shader);
+
+    GLuint environment_vao;
+    glGenVertexArrays(1, &environment_vao);
 
     GLuint model_location = glGetUniformLocation(program, "model");
     GLuint view_location = glGetUniformLocation(program, "view");
@@ -354,11 +402,6 @@ int main() try
         if (button_down[SDLK_RIGHT])
             view_azimuth += 2.f * dt;
 
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_CULL_FACE);
-
         float near = 0.1f;
         float far = 100.f;
         float top = near;
@@ -377,8 +420,29 @@ int main() try
         glm::vec3 light_direction = glm::normalize(glm::vec3(1.f, 2.f, 3.f));
 
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
+        glm::mat4 view_projection_inverse = inverse(projection * view);
+
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glUseProgram(environment_program);
+        glDisable(GL_DEPTH_TEST);
+
+        glUniformMatrix4fv(view_projection_inverse_location, 1, GL_FALSE, reinterpret_cast<float *>(&view_projection_inverse));
+        glUniform3fv(_camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
+        glUniform1i(_environment_map_texture_location, 2);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, albedo_texture);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, normal_texture);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, environment_map_texture);
+
+        glBindVertexArray(environment_vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
         glUseProgram(program);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_CULL_FACE);
         glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
