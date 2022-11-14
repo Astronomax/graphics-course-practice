@@ -19,6 +19,7 @@ const char shadow_vertex_shader_source[] = R"(#version 330 core
 
 const char shadow_fragment_shader_source[] = R"(#version 330 core
     uniform sampler2D alpha_texture;
+    uniform int have_alpha;
 
     layout (location = 0) out vec4 out_color;
 
@@ -27,7 +28,7 @@ const char shadow_fragment_shader_source[] = R"(#version 330 core
     void main() {
         float z = gl_FragCoord.z;
         out_color = vec4(z, z * z + 0.25 * (pow(dFdx(z), 2.0) + pow(dFdy(z), 2.0)), 0.0, 0.0);
-        if(texture(alpha_texture, tex_coord).r > 0.5) {
+        if(have_alpha == 1 && texture(alpha_texture, tex_coord).r < 0.5) {
             discard;
         }
     }
@@ -59,15 +60,14 @@ const char fragment_shader_source[] = R"(#version 330 core
 
     uniform vec3 light_direction;
     uniform vec3 light_color;
-
     uniform mat4 transform;
-
     uniform sampler2D shadow_map;
     uniform sampler2D ambient_texture;
-
+    uniform sampler2D alpha_texture;
     uniform float glossiness;
     uniform float power;
     uniform vec3 camera_position;
+    uniform int have_alpha;
 
     in vec3 position;
     in vec3 normal;
@@ -80,7 +80,7 @@ const char fragment_shader_source[] = R"(#version 330 core
     }
 
     float specular(vec3 direction) {
-        vec3 reflected_direction = 2.0 * normal *  dot(normal, direction) - direction;
+        vec3 reflected_direction = 2.0 * normal * dot(normal, direction) - direction;
         vec3 camera_direction = normalize(camera_position - position);
         return glossiness * pow(max(0.0, dot(reflected_direction, camera_direction)), power);
     }
@@ -123,9 +123,14 @@ const char fragment_shader_source[] = R"(#version 330 core
         }
 
         vec3 albedo = vec3(texture(ambient_texture, tex_coord));
+        //vec3 point_light_direction = normalize(position - point_light_position);
         vec3 light = ambient + light_color * phong(light_direction) * shadow_factor;
         vec3 color = albedo * light;
         out_color = vec4(color, 1.0);
+
+        if(have_alpha == 1 && texture(alpha_texture, tex_coord).r < 0.5) {
+            discard;
+        }
     }
 )";
 
