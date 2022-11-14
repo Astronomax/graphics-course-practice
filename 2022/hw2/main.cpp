@@ -48,6 +48,7 @@ int main(int argc, char **argv) try {
     GLint shadow_model_location = glGetUniformLocation(shadow_program, "model");
     GLint shadow_transform_location = glGetUniformLocation(shadow_program, "transform");
     GLint alpha_texture_location = glGetUniformLocation(shadow_program, "alpha_texture");
+    GLint have_alpha_location = glGetUniformLocation(shadow_program, "have_alpha");
 
     auto vertex_shader = create_shader(GL_VERTEX_SHADER, vertex_shader_source);
     auto fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
@@ -65,6 +66,8 @@ int main(int argc, char **argv) try {
     GLint glossiness_location = glGetUniformLocation(program, "glossiness");
     GLint power_location = glGetUniformLocation(program, "power");
     GLint camera_position_location = glGetUniformLocation(program, "camera_position");
+    GLint _alpha_texture_location = glGetUniformLocation(program, "alpha_texture");
+    GLint _have_alpha_location = glGetUniformLocation(program, "have_alpha");
 
     std::string project_root = PROJECT_ROOT;
 
@@ -189,12 +192,13 @@ int main(int argc, char **argv) try {
             dz = std::max(dz, glm::dot(v, light_z));
         }
         glm::mat4 transform = glm::inverse(glm::mat4({
-                                                             {dx * light_x.x, dx * light_x.y, dx * light_x.z, 0.f},
-                                                             {dy * light_y.x, dy * light_y.y, dy * light_y.z, 0.f},
-                                                             {dz * light_z.x, dz * light_z.y, dz * light_z.z, 0.f},
-                                                             {c.x, c.y, c.z, 1.f}
-                                                     }));
+            {dx * light_x.x, dx * light_x.y, dx * light_x.z, 0.f},
+            {dy * light_y.x, dy * light_y.y, dy * light_y.z, 0.f},
+            {dz * light_z.x, dz * light_z.y, dz * light_z.z, 0.f},
+            {c.x, c.y, c.z, 1.f}
+        }));
 
+        //glm::vec3 point_light_position = {0.f, 0.1f, cos(time) * 2.f};
 
         glm::mat4 model(1.f);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
@@ -215,7 +219,7 @@ int main(int argc, char **argv) try {
             auto material = materials[shape.mesh.material_ids[0]];
             std::string texture_path = scene_dir + material.alpha_texname;
             std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
-            textures.load_texture(texture_path);
+            glUniform1i(have_alpha_location, !material.alpha_texname.empty());
             glUniform1i(alpha_texture_location, textures.get_texture(texture_path));
             glDrawArrays(GL_TRIANGLES, current_block, (GLint)shape.mesh.indices.size());
             current_block += (GLint)shape.mesh.indices.size();
@@ -255,6 +259,7 @@ int main(int argc, char **argv) try {
         glUniform3fv(light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
         glUniform3f(light_color_location, 0.8f, 0.8f, 0.8f);
         glUniform3fv(camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
+        //glUniform3fv(point_light_position_location, 1, reinterpret_cast<float *>(&point_light_position));
         glUniform1i(shadow_map_location, 1);
 
         current_block = 0;
@@ -262,10 +267,14 @@ int main(int argc, char **argv) try {
             auto material = materials[shape.mesh.material_ids[0]];
             std::string texture_path = scene_dir + material.ambient_texname;
             std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
-            textures.load_texture(texture_path);
             glUniform1f(power_location, material.shininess);
             glUniform1f(glossiness_location, material.specular[0]);
             glUniform1i(texture_location, textures.get_texture(texture_path));
+            material = materials[shape.mesh.material_ids[0]];
+            texture_path = scene_dir + material.alpha_texname;
+            std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
+            glUniform1i(_have_alpha_location, !material.alpha_texname.empty());
+            glUniform1i(_alpha_texture_location, textures.get_texture(texture_path));
             glDrawArrays(GL_TRIANGLES, current_block, (GLint)shape.mesh.indices.size());
             current_block += (GLint)shape.mesh.indices.size();
         }
