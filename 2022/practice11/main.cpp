@@ -45,18 +45,25 @@ void glew_fail(std::string_view message, GLenum error)
 }
 
 const char vertex_shader_source[] =
-R"(#version 330 core
+        R"(#version 330 core
 
 layout (location = 0) in vec3 in_position;
+layout (location = 1) in float size;
+layout (location = 2) in float rotation;
+
+out float _size;
+out float _rotation;
 
 void main()
 {
     gl_Position = vec4(in_position, 1.0);
+    _size = size;
+    _rotation = rotation;
 }
 )";
 
 const char geometry_shader_source[] =
-R"(#version 330 core
+        R"(#version 330 core
 
 uniform mat4 model;
 uniform mat4 view;
@@ -64,26 +71,55 @@ uniform mat4 projection;
 uniform vec3 camera_position;
 
 layout (points) in;
-layout (points, max_vertices = 1) out;
+layout (triangle_strip, max_vertices = 4) out;
+
+in float _size[];
+in float _rotation[];
+out vec2 texcoord;
+
+const vec3 shifts[4] = vec3[4](
+    vec3(-1.0, -1.0, 0.0),
+    vec3(-1.0, 1.0, 0.0),
+    vec3(1.0, -1.0, 0.0),
+    vec3(1.0, 1.0, 0.0)
+);
 
 void main()
 {
     vec3 center = gl_in[0].gl_Position.xyz;
-    gl_Position = projection * view * model * vec4(center, 1.0);
-    EmitVertex();
+    vec3 z = normalize(camera_position - center);
+    vec3 y_ = vec3(0.0, 1.0, 0.0);
+    vec3 x_ = normalize(cross(y_, z));
+
+    vec3 x = x_ * cos(_rotation[0]) + y_ * sin(_rotation[0]);
+    vec3 y = -x_ * sin(_rotation[0]) + y_ * cos(_rotation[0]);
+
+    for(int i = 0; i < 4; i++) {
+        vec3 cur_vertex = center;
+        cur_vertex += shifts[i].x * _size[0] * x;
+        cur_vertex += shifts[i].y * _size[0] * y;
+        gl_Position = projection * view * model * vec4(cur_vertex, 1.0);
+        texcoord = 0.5 * shifts[i].xy + vec2(0.5);
+        EmitVertex();
+    }
     EndPrimitive();
 }
 
 )";
 
 const char fragment_shader_source[] =
-R"(#version 330 core
+        R"(#version 330 core
+uniform sampler2D _texture;
+uniform sampler1D gradient;
 
 layout (location = 0) out vec4 out_color;
 
+in vec2 texcoord;
+
 void main()
 {
-    out_color = vec4(1.0, 0.0, 0.0, 1.0);
+    float p = texture(_texture, texcoord).r;
+    out_color = vec4(texture(gradient, p).rgb, p);
 }
 )";
 
@@ -126,9 +162,27 @@ GLuint create_program(Shaders ... shaders)
     return result;
 }
 
+GLuint load_texture(std::string const & path) {
+    int width, height, channels;
+    auto pixels = stbi_load(path.data(), &width, &height, &channels, 4);
+    GLuint result;
+    glGenTextures(1, &result);
+    glBindTexture(GL_TEXTURE_2D, result);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    stbi_image_free(pixels);
+    return result;
+}
+
 struct particle
 {
     glm::vec3 position;
+    float size;
+    float rotation;
+    glm::vec3 velocity;
+    float angular_velocity;
 };
 
 int main() try
@@ -146,10 +200,10 @@ int main() try
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
     SDL_Window * window = SDL_CreateWindow("Graphics course practice 11",
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
-        800, 600,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
+                                           SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED,
+                                           800, 600,
+                                           SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
 
     if (!window)
         sdl2_fail("SDL_CreateWindow: ");
@@ -178,16 +232,11 @@ int main() try
     GLuint view_location = glGetUniformLocation(program, "view");
     GLuint projection_location = glGetUniformLocation(program, "projection");
     GLuint camera_position_location = glGetUniformLocation(program, "camera_position");
+    GLuint texture_location = glGetUniformLocation(program, "_texture");
+    GLuint gradient_location = glGetUniformLocation(program, "gradient");
 
     std::default_random_engine rng;
-
-    std::vector<particle> particles(256);
-    for (auto & p : particles)
-    {
-        p.position.x = std::uniform_real_distribution<float>{-1.f, 1.f}(rng);
-        p.position.y = 0.f;
-        p.position.z = std::uniform_real_distribution<float>{-1.f, 1.f}(rng);
-    }
+    std::vector<particle> particles;
 
     GLuint vao, vbo;
     glGenVertexArrays(1, &vao);
@@ -198,9 +247,31 @@ int main() try
 
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(particle), (void*)(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, sizeof(particle), (void*)(12));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(particle), (void*)(16));
+
+    float data[] = {
+            0.0f, 0.0f, 0.0f, 1.0f,
+            1.0f, 0.0f, 0.0f, 1.0f,
+            1.0f, 1.0f, 0.0f, 1.0f,
+            1.0f, 1.0f, 1.0f, 1.0f
+    };
+    GLuint gradient;
+    glGenTextures(1, &gradient);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_1D, gradient);
+    glTexImage1D(GL_TEXTURE_1D, 0, GL_RGBA32F, 4, 0, GL_RGBA, GL_FLOAT, data);
+    glTexParameterf(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameterf(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glGenerateMipmap(GL_TEXTURE_1D);
 
     const std::string project_root = PROJECT_ROOT;
     const std::string particle_texture_path = project_root + "/particle.png";
+
+    glActiveTexture(GL_TEXTURE0);
+    GLuint _texture = load_texture(particle_texture_path);
 
     glPointSize(5.f);
 
@@ -222,28 +293,28 @@ int main() try
     while (running)
     {
         for (SDL_Event event; SDL_PollEvent(&event);) switch (event.type)
-        {
-        case SDL_QUIT:
-            running = false;
-            break;
-        case SDL_WINDOWEVENT: switch (event.window.event)
             {
-            case SDL_WINDOWEVENT_RESIZED:
-                width = event.window.data1;
-                height = event.window.data2;
-                glViewport(0, 0, width, height);
-                break;
+                case SDL_QUIT:
+                    running = false;
+                    break;
+                case SDL_WINDOWEVENT: switch (event.window.event)
+                    {
+                        case SDL_WINDOWEVENT_RESIZED:
+                            width = event.window.data1;
+                            height = event.window.data2;
+                            glViewport(0, 0, width, height);
+                            break;
+                    }
+                    break;
+                case SDL_KEYDOWN:
+                    button_down[event.key.keysym.sym] = true;
+                    if (event.key.keysym.sym == SDLK_SPACE)
+                        paused = !paused;
+                    break;
+                case SDL_KEYUP:
+                    button_down[event.key.keysym.sym] = false;
+                    break;
             }
-            break;
-        case SDL_KEYDOWN:
-            button_down[event.key.keysym.sym] = true;
-            if (event.key.keysym.sym == SDLK_SPACE)
-                paused = !paused;
-            break;
-        case SDL_KEYUP:
-            button_down[event.key.keysym.sym] = false;
-            break;
-        }
 
         if (!running)
             break;
@@ -263,8 +334,40 @@ int main() try
         if (button_down[SDLK_RIGHT])
             camera_rotation += 3.f * dt;
 
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glEnable(GL_DEPTH_TEST);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glDisable(GL_DEPTH_TEST);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+
+        float A = 1.5, B = 0.1, C = 0.1;
+        if(!paused) {
+            for(auto &p : particles) {
+                if(p.position.y > 4.2f) {
+                    p.position.x = std::uniform_real_distribution<float>{-1.f, 1.f}(rng);
+                    p.position.y = 0.f;
+                    p.position.z = std::uniform_real_distribution<float>{-1.f, 1.f}(rng);
+                    p.size = std::uniform_real_distribution<float>{0.2f, 0.4f}(rng);
+                    p.velocity.y = std::uniform_real_distribution<float>{0.0f, 0.9f}(rng);
+                    p.angular_velocity = std::uniform_real_distribution<float>{0.0f, 0.5f}(rng);
+                }
+                else {
+                    p.velocity.y += dt * A;
+                    p.velocity *= exp(-C * dt);
+                    p.size *= exp(-B * dt);
+                    p.position += p.velocity * dt;
+                    p.rotation += p.angular_velocity * dt;
+                }
+            }
+            if(particles.size() < 512) {
+                particles.emplace_back();
+                particles.back().position.x = std::uniform_real_distribution<float>{-1.f, 1.f}(rng);
+                particles.back().position.y = 0.f;
+                particles.back().position.z = std::uniform_real_distribution<float>{-1.f, 1.f}(rng);
+                particles.back().size = std::uniform_real_distribution<float>{0.2f, 0.4f}(rng);
+                particles.back().velocity.y = std::uniform_real_distribution<float>{0.0f, 0.1f}(rng);
+                particles.back().angular_velocity = std::uniform_real_distribution<float>{0.0f, 0.5f}(rng);
+            }
+        }
 
         float near = 0.1f;
         float far = 100.f;
@@ -290,6 +393,12 @@ int main() try
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
 
+        glUniform1i(texture_location, 0);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, _texture);
+
+
+        glUniform1i(gradient_location, 1);
         glBindVertexArray(vao);
         glDrawArrays(GL_POINTS, 0, particles.size());
 
