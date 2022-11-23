@@ -11,6 +11,8 @@
 #include <stdexcept>
 #include <iostream>
 #include <chrono>
+#include <vector>
+#include <memory>
 
 std::string to_string(std::string_view str)
 {
@@ -30,7 +32,17 @@ void glew_fail(std::string_view message, GLenum error)
 const char vertex_shader_source[] =
 R"(#version 330 core
 
-const vec2 VERTICES[3] = vec2[3](
+/*Task 1, 2
+uniform float scale, angle;
+mat2 r = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+*/
+
+//Task 3
+uniform mat4 transform;
+//Task 5
+uniform mat4 view;
+
+/*const vec2 VERTICES[3] = vec2[3](
     vec2(0.0, 1.0),
     vec2(-sqrt(0.75), -0.5),
     vec2( sqrt(0.75), -0.5)
@@ -40,6 +52,31 @@ const vec3 COLORS[3] = vec3[3](
     vec3(1.0, 0.0, 0.0),
     vec3(0.0, 1.0, 0.0),
     vec3(0.0, 0.0, 1.0)
+);*/
+
+//Task 6
+const float pi = 3.14;
+
+const vec2 VERTICES[8] = vec2[8](
+    vec2(0.0, 0.0),
+    vec2(0.0, 1.0),
+    vec2(cos(pi / 6), sin(pi / 6)),
+    vec2(cos(pi / 6), -sin(pi / 6)),
+    vec2(0.0, -1.0),
+    vec2(-cos(pi / 6), -sin(pi / 6)),
+    vec2(-cos(pi / 6), sin(pi / 6)),
+    vec2(0.0, 1.0)
+);
+
+const vec3 COLORS[8] = vec3[8](
+    vec3(1.0, 1.0, 1.0),
+    vec3(0.0, 0.0, 1.0),
+    vec3(0.0, 1.0, 0.0),
+    vec3(1.0, 0.0, 0.0),
+    vec3(1.0, 1.0, 0.0),
+    vec3(1.0, 0.0, 1.0),
+    vec3(0.0, 1.0, 1.0),
+    vec3(0.0, 0.0, 1.0)
 );
 
 out vec3 color;
@@ -47,7 +84,8 @@ out vec3 color;
 void main()
 {
     vec2 position = VERTICES[gl_VertexID];
-    gl_Position = vec4(position, 0.0, 1.0);
+    //gl_Position = transform * vec4(r * position * scale, 0.0, 1.0); Task 1
+    gl_Position = view * transform * vec4(position, 0.0, 1.0);
     color = COLORS[gl_VertexID];
 }
 )";
@@ -104,6 +142,17 @@ GLuint create_program(GLuint vertex_shader, GLuint fragment_shader)
     return result;
 }
 
+template<std::size_t N>
+std::vector<GLdouble> mult(const std::vector<GLdouble>& a,
+                           const std::vector<GLdouble> &b) {
+    std::vector<GLdouble> res(N * N);
+    for(int i = 0; i < N; i++)
+        for(int j = 0; j < N; j++)
+            for(int k = 0; k < N; k++)
+                res[i * N + j] += a[i * N + k] * b[k * N + j];
+    return res;
+}
+
 int main() try
 {
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -127,6 +176,8 @@ int main() try
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
     SDL_GLContext gl_context = SDL_GL_CreateContext(window);
+    SDL_GL_SetSwapInterval(0);
+
     if (!gl_context)
         sdl2_fail("SDL_GL_CreateContext: ");
 
@@ -142,11 +193,18 @@ int main() try
     GLuint fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
 
     GLuint program = create_program(vertex_shader, fragment_shader);
-
+    glUseProgram(program);
+    glUniform1f(glGetUniformLocation(program, "scale"), 0.5);
     GLuint vao;
     glGenVertexArrays(1, &vao);
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
+
+    GLdouble time = 0.f;
+
+    //GLint angle_id = glGetUniformLocation(program, "angle"); Task 1
+    GLint transform_id = glGetUniformLocation(program, "transform"); //Task 2
+    GLint view_id = glGetUniformLocation(program, "view"); //Task 58
 
     bool running = true;
     while (running)
@@ -171,18 +229,62 @@ int main() try
             break;
 
         auto now = std::chrono::high_resolution_clock::now();
-        float dt = std::chrono::duration_cast<std::chrono::duration<float>>(now - last_frame_start).count();
+        //GLdouble dt = std::chrono::duration_cast<std::chrono::duration<float>>(now - last_frame_start).count();
+        GLdouble dt = 0.016f; //Task 5
+
         last_frame_start = now;
 
         glClear(GL_COLOR_BUFFER_BIT);
 
-        glUseProgram(program);
+        //glUniform1f(angle_id, time); Task 1
+        /*Task 3
+        float transform[16] = {
+                0.5f * cos(time), -0.5f * sin(time), 0, 0,
+                0.5f * sin(time), 0.5f * cos(time), 0, 0
+                0, 0, 1, 0,
+                0, 0, 0, 1
+        };*/
+        //Task 4
+        GLdouble tx = time * 0.01f, ty = 0;
+        std::vector<GLdouble> scale = {
+                0.5f, 0, 0, 0,
+                0, 0.5f, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1
+        };
+        std::vector<GLdouble> shift = {
+                1, 0, 0, tx,
+                0, 1, 0, ty,
+                0, 0, 1, 0,
+                0, 0, 0, 1
+        };
+        std::vector<GLdouble> rotation = {
+                cos(time), -sin(time), 0, 0,
+                sin(time), cos(time), 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1
+        };
+        std::vector<GLdouble> transform_ = mult<4>(scale, mult<4>(rotation, shift));
+        std::unique_ptr<GLfloat []> transform(new GLfloat[16]);
+        std::copy(transform_.begin(), transform_.end(), transform.get());
+        glUniformMatrix4fv(transform_id, 1, GL_TRUE, transform.get());
+
+        //Task 5
+        GLfloat view[16] = {
+                (GLfloat)height / (GLfloat)width, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1
+        };
+        glUniformMatrix4fv(view_id, 1, GL_TRUE, view);
+
         glBindVertexArray(vao);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
-
+        //glDrawArrays(GL_TRIANGLES, 0, 3);
+        glDrawArrays(GL_TRIANGLE_FAN, 0, 8);
         SDL_GL_SwapWindow(window);
+        time += dt;
+        //std::cout << dt << "\n"; Task 5
     }
-
     SDL_GL_DeleteContext(gl_context);
     SDL_DestroyWindow(window);
 }
