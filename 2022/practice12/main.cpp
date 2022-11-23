@@ -127,14 +127,14 @@ void main()
     vec2 t = intersect_bbox(camera_position, dir);
     float tmin = max(t[0], 0.0);
     float tmax = t[1];
-    float absorption = 0.0;
-    float scattering = 4.0;
-    float extinction = absorption + scattering;
+    vec3 absorption = vec3(0.0);
+    vec3 scattering = vec3(8.0, 4.0, 2.0);
+    vec3 extinction = absorption + scattering;
     vec3 light_color = vec3(16.0);
     vec3 color = vec3(0.0);
 
     //float optical_depth = (tmax - tmin) * absorption;
-    float optical_depth = 0;
+    vec3 optical_depth = vec3(0.0);
     float dt = (tmax - tmin) / 64.0;
     for(int i = 0; i < 64; i++) {
         float t = tmin + (float(i) + 0.5) * dt;
@@ -147,7 +147,7 @@ void main()
         float _tmax = _t[1];
         float _dt = (_tmax - _tmin) / 16.0;
 
-        float light_optical_depth = 0;
+        vec3 light_optical_depth = vec3(0.0);
         for(int i = 0; i < 16; i++) {
             float t = _tmin + (float(i) + 0.5) * _dt;
             vec3 _p = p + t * light_direction;
@@ -157,8 +157,8 @@ void main()
         color += light_color * exp(-light_optical_depth) * exp(-optical_depth) * dt * density * scattering / 4.0 / PI;
     }
 
-    float opacity = 1.0 - exp(-optical_depth);
-    out_color = vec4(color, opacity);
+    //float opacity = 1.0 - exp(-optical_depth);
+    out_color = vec4(color, 1.0);
 }
 )";
 
@@ -388,7 +388,7 @@ int main() try
         if (button_down[SDLK_s])
             view_angle += 2.f * dt;
 
-        glClearColor(0.8f, 0.8f, 0.9f, 0.f);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glEnable(GL_DEPTH_TEST);
