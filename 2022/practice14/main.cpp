@@ -56,13 +56,14 @@ uniform mat4 projection;
 layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec3 in_normal;
 layout (location = 2) in vec2 in_texcoord;
+layout (location = 3) in vec3 in_shift;
 
 out vec3 normal;
 out vec2 texcoord;
 
 void main()
 {
-    gl_Position = projection * view * model * vec4(in_position, 1.0);
+    gl_Position = projection * view * model * vec4(in_position + in_shift, 1.0);
     normal = mat3(model) * in_normal;
     texcoord = in_texcoord;
 }
@@ -140,7 +141,7 @@ int main() try
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
-    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 16);
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);
     SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
@@ -190,8 +191,17 @@ int main() try
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, input_model.buffer.size(), input_model.buffer.data(), GL_STATIC_DRAW);
 
+    std::vector<glm::vec3> shifts;
+    for(int x = -16; x <= 16; ++x)
+        for(int z = -16; z <= 16; ++z)
+            shifts.emplace_back(x, 0.f, z);
+    GLuint shifts_vbo;
+    glGenBuffers(1, &shifts_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, shifts_vbo);
+    glBufferData(GL_ARRAY_BUFFER, shifts.size() * sizeof(glm::vec3), shifts.data(), GL_STATIC_DRAW);
+
     std::vector<GLuint> vaos;
-    for (int i = 0; i < input_model.meshes.size(); ++i)
+    for(const auto &mesh : input_model.meshes)
     {
         GLuint vao;
         glGenVertexArrays(1, &vao);
@@ -206,9 +216,14 @@ int main() try
         };
 
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        setup_attribute(0, input_model.meshes[i].position);
-        setup_attribute(1, input_model.meshes[i].normal);
-        setup_attribute(2, input_model.meshes[i].texcoord);
+        setup_attribute(0, mesh.position);
+        setup_attribute(1, mesh.normal);
+        setup_attribute(2, mesh.texcoord);
+
+        glEnableVertexAttribArray(3);
+        glBindBuffer(GL_ARRAY_BUFFER, shifts_vbo);
+        glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 0, reinterpret_cast<void *>(0));
+        glVertexAttribDivisor(3, 1);
 
         vaos.push_back(vao);
     }
@@ -243,6 +258,12 @@ int main() try
     float camera_rotation = 0.f;
 
     bool paused = false;
+
+    std::vector<GLuint> queries;
+    std::vector<bool> used;
+
+    //std::vector<double> elapsed_times;
+    std::vector<double> averages;
 
     bool running = true;
     while (running)
@@ -306,6 +327,23 @@ int main() try
         camera_position += camera_move_forward * glm::vec3(-std::sin(camera_rotation), 0.f, std::cos(camera_rotation));
         camera_position += camera_move_sideways * glm::vec3(std::cos(camera_rotation), 0.f, std::sin(camera_rotation));
 
+        int j = -1;
+        for(int i = 0; i < queries.size(); i++) {
+            if(!used[i]) {
+                j = i;
+                used[j] = true;
+                break;
+            }
+        }
+        if(j == -1) {
+            j = (int)queries.size();
+            GLuint query_id;
+            glGenQueries(1, &query_id);
+            queries.push_back(query_id);
+            used.push_back(true);
+        }
+        glBeginQuery(GL_TIME_ELAPSED, queries[j]);
+
         glClearColor(0.8f, 0.8f, 1.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -316,7 +354,7 @@ int main() try
         float near = 0.1f;
         float far = 100.f;
 
-        glm::mat4 model(1.f);
+        //glm::mat4 model(1.f);
 
         glm::mat4 view(1.f);
         view = glm::rotate(view, camera_rotation, {0.f, 1.f, 0.f});
@@ -329,22 +367,89 @@ int main() try
         glm::vec3 light_direction = glm::normalize(glm::vec3(1.f, 2.f, 3.f));
 
         glUseProgram(program);
-        glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+        //glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
 
         glBindTexture(GL_TEXTURE_2D, texture);
 
-        {
-            auto const & mesh = input_model.meshes[0];
-            glBindVertexArray(vaos[0]);
-            glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset));
+        /* Task 2
+        for(int x = -16; x <= 16; ++x) {
+            for (int z = -16; z <= 16; ++z) {
+                glm::mat4 model(1.f);
+                model = glm::translate(model, glm::vec3(x, 0.f, z));
+                glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+                auto const &mesh = input_model.meshes[0];
+                glBindVertexArray(vaos[0]);
+                glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type,
+                               reinterpret_cast<void *>(mesh.indices.view.offset));
+            }
+        }*/
+        // Task 3
+        /*
+        glm::mat4 model(1.f);
+        glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+        auto const &mesh = input_model.meshes[0];
+        glBindVertexArray(vaos[0]);
+        glDrawElementsInstanced(GL_TRIANGLES, mesh.indices.count, mesh.indices.type,
+                       reinterpret_cast<void *>(mesh.indices.view.offset), 1089);
+        */
+        // Task 4
+
+        glm::mat4 model(1.f);
+        glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+
+        frustum f(projection * view);
+        std::vector<glm::vec3> groups[6];
+        for(int x = -16; x <= 16; ++x) {
+            for(int z = -16; z <= 16; ++z) {
+                glm::vec3 shift(x, 0.f, z);
+                int lod = std::min(5, (int)(glm::length(shift - camera_position) / 3.f));
+                aabb box = aabb(input_model.meshes[lod].min + shift, input_model.meshes[lod].max + shift);
+                if (intersect(box, f))
+                    groups[lod].push_back(shift);
+            }
+        }
+        /*
+        glBindBuffer(GL_ARRAY_BUFFER, shifts_vbo);
+        glBufferData(GL_ARRAY_BUFFER, shifts_.size() * sizeof(glm::vec3), shifts_.data(), GL_STATIC_DRAW);
+        glBindVertexArray(vaos[0]);
+        glDrawElementsInstanced(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset), shifts_.size());
+        std::cout << "intersections: " << shifts_.size() << std::endl;
+        */
+
+        std::cout << groups[5].size() << std::endl;
+        for(int i = 0; i <= 5; i++) {
+            auto const &mesh = input_model.meshes[i];
+            glBindBuffer(GL_ARRAY_BUFFER, shifts_vbo);
+            glBufferData(GL_ARRAY_BUFFER, groups[i].size() * sizeof(glm::vec3), groups[i].data(), GL_STATIC_DRAW);
+            glBindVertexArray(vaos[i]);
+            glDrawElementsInstanced(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset), groups[i].size());
         }
 
+        glEndQuery(GL_TIME_ELAPSED);
+
+        for(int i = 0; i < queries.size(); i++) {
+            if (!used[i]) continue;
+            GLint result = 0;
+            glGetQueryObjectiv(queries[i], GL_QUERY_RESULT_AVAILABLE, &result);
+            if(result) {
+                glGetQueryObjectiv(queries[i], GL_QUERY_RESULT, &result);
+                double elapsed_time = (double)result / 1e6;
+                std::cout << "elapsed: " << elapsed_time << std::endl;
+                //elapsed_times.push_back(elapsed_time);
+                //if(elapsed_times.size() >= 50) {
+                    //double average = std::accumulate(elapsed_times.begin(), elapsed_times.end(), 0.0) / 50.0;
+                    //std::cout << average << std::endl;
+                    //elapsed_times.clear();
+                //}
+                used[i] = false;
+            }
+        }
         SDL_GL_SwapWindow(window);
     }
-
+    std::cout << "queries: " << queries.size() << "\n";
     SDL_GL_DeleteContext(gl_context);
     SDL_DestroyWindow(window);
 }
