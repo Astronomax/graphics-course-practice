@@ -21,8 +21,7 @@ void main() {
     vec3 env_color = texture(environment_map_texture, env_map_coord).rgb;
     float ambient_light = 0.2;
     float lightness = ambient_light + max(0.0, dot(normal, light_direction));
-    //vec3 albedo = vec3(1.0);
-    float n = 1.5;
+    float n = 3.5;
     float r0 = pow((1.0 - n) / (1.0 + n), 2.0);
     float r = r0 + (1.0 - r0) * pow(1.0 - dot(normal, direction), 5.0);
     out_color = vec4(mix(vec3(lightness), env_color, 0.5), r);

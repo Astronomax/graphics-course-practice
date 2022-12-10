@@ -1,3 +1,6 @@
+#define TINYOBJLOADER_IMPLEMENTATION
+//#include "tiny_obj_loader.h"
+
 #ifdef WIN32
 #include <SDL.h>
 #undef main
@@ -10,84 +13,27 @@
 #include <string_view>
 #include <stdexcept>
 #include <iostream>
-#include <fstream>
 #include <chrono>
 #include <vector>
-#include <map>
-#include <cmath>
+#include <set>
+
+#include "obj_parser.hpp"
+#include "stb_image.h"
 
 #define GLM_FORCE_SWIZZLE
 #define GLM_ENABLE_EXPERIMENTAL
+
 #include <glm/vec3.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/scalar_constants.hpp>
 #include <glm/gtx/string_cast.hpp>
+#include <numeric>
 
-#include "obj_parser.hpp"
-#include "stb_image.h"
-
-std::string to_string(std::string_view str) {
-    return { str.begin(), str.end() };
-}
-
-void sdl2_fail(std::string_view message) {
-    throw std::runtime_error(to_string(message) + SDL_GetError());
-}
-
-void glew_fail(std::string_view message, GLenum error) {
-    throw std::runtime_error(to_string(message) + reinterpret_cast<const char *>(glewGetErrorString(error)));
-}
-
-GLuint create_shader(GLenum type, const std::string &file_path) {
-    std::ifstream file(file_path);
-    file.seekg(0, std::ios::end);
-    std::streamsize size = file.tellg();
-    std::string source(size, ' ');
-    file.seekg(0);
-    file.read(&source[0], size);
-
-    GLuint result = glCreateShader(type);
-    glShaderSource(result, 1, reinterpret_cast<const GLchar *const *>(&source), nullptr);
-    glCompileShader(result);
-    GLint status;
-    glGetShaderiv(result, GL_COMPILE_STATUS, &status);
-    if (status != GL_TRUE) {
-        GLint info_log_length;
-        glGetShaderiv(result, GL_INFO_LOG_LENGTH, &info_log_length);
-        std::string info_log(info_log_length, '\0');
-        glGetShaderInfoLog(result, info_log.size(), nullptr, info_log.data());
-        throw std::runtime_error("Shader compilation failed: " + info_log);
-    }
-    file.close();
-    return result;
-}
-
-GLuint create_program(GLuint vertex_shader, GLuint fragment_shader) {
-    GLuint result = glCreateProgram();
-    glAttachShader(result, vertex_shader);
-    glAttachShader(result, fragment_shader);
-    glLinkProgram(result);
-
-    GLint status;
-    glGetProgramiv(result, GL_LINK_STATUS, &status);
-    if (status != GL_TRUE) {
-        GLint info_log_length;
-        glGetProgramiv(result, GL_INFO_LOG_LENGTH, &info_log_length);
-        std::string info_log(info_log_length, '\0');
-        glGetProgramInfoLog(result, info_log.size(), nullptr, info_log.data());
-        throw std::runtime_error("Program linkage failed: " + info_log);
-    }
-    return result;
-}
-
-struct vertex {
-    glm::vec3 position;
-    glm::vec3 tangent;
-    glm::vec3 normal;
-    glm::vec2 texcoords;
-};
+#include "texture_holder.hpp"
+#include <fstream>
+#include "utils.hpp"
 
 std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_sphere(float radius, int quality) {
     std::vector<vertex> vertices;
@@ -130,43 +76,11 @@ GLuint load_texture(std::string const &path) {
     return result;
 }
 
-int main() try
-{
-    if (SDL_Init(SDL_INIT_VIDEO) != 0)
-        sdl2_fail("SDL_Init: ");
-
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
-    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);
-    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-
-    SDL_Window * window = SDL_CreateWindow("Graphics course practice 5",
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
-        800, 600,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
-
-    if (!window)
-        sdl2_fail("SDL_CreateWindow: ");
-
+int main() try {
+    auto *window = create_window("Homework 3");
+    auto gl_context = create_context(window);
     int width, height;
     SDL_GetWindowSize(window, &width, &height);
-
-    SDL_GLContext gl_context = SDL_GL_CreateContext(window);
-    if (!gl_context)
-        sdl2_fail("SDL_GL_CreateContext: ");
-
-    if (auto result = glewInit(); result != GLEW_NO_ERROR)
-        glew_fail("glewInit: ", result);
-
-    if (!GLEW_VERSION_3_3)
-        throw std::runtime_error("OpenGL 3.3 is not supported");
 
     std::string project_root = PROJECT_ROOT;
 
@@ -180,11 +94,92 @@ int main() try
     GLuint _camera_position_location = glGetUniformLocation(environment_program, "camera_position");
     GLuint _environment_map_texture_location = glGetUniformLocation(environment_program, "environment_map_texture");
 
-    auto christmas_tree_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/christmas_tree.vert");
-    auto christmas_tree_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/christmas_tree.frag");
-    auto christmas_tree_program = create_program(christmas_tree_vertex_shader, christmas_tree_fragment_shader);
+    auto shadow_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/shadow.vert");
+    auto shadow_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/shadow.frag");
+    auto shadow_program = create_program(shadow_vertex_shader, shadow_fragment_shader);
 
+    GLint shadow_model_location = glGetUniformLocation(shadow_program, "model");
+    GLint shadow_transform_location = glGetUniformLocation(shadow_program, "transform");
+    GLint alpha_texture_location = glGetUniformLocation(shadow_program, "alpha_texture");
+    GLint have_alpha_location = glGetUniformLocation(shadow_program, "have_alpha");
 
+       auto christmas_tree_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/christmas_tree.vert");
+       auto christmas_tree_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/christmas_tree.frag");
+       auto christmas_tree_program = create_program(christmas_tree_vertex_shader, christmas_tree_fragment_shader);
+
+       GLint _model_location = glGetUniformLocation(christmas_tree_program, "model");
+       GLint _view_location = glGetUniformLocation(christmas_tree_program, "view");
+       GLint _projection_location = glGetUniformLocation(christmas_tree_program, "projection");
+       GLint ambient_location = glGetUniformLocation(christmas_tree_program, "ambient_color");
+       GLint texture_location = glGetUniformLocation(christmas_tree_program, "ambient_texture");
+       GLint shadow_map_location = glGetUniformLocation(christmas_tree_program, "shadow_map");
+       GLint transform_location = glGetUniformLocation(christmas_tree_program, "transform");
+       GLint _light_direction_location = glGetUniformLocation(christmas_tree_program, "light_direction");
+       GLint light_color_location = glGetUniformLocation(christmas_tree_program, "light_color");
+       GLint glossiness_location = glGetUniformLocation(christmas_tree_program, "glossiness");
+       GLint power_location = glGetUniformLocation(christmas_tree_program, "power");
+       GLint __camera_position_location = glGetUniformLocation(christmas_tree_program, "camera_position");
+       GLint _alpha_texture_location = glGetUniformLocation(christmas_tree_program, "alpha_texture");
+       GLint _have_alpha_location = glGetUniformLocation(christmas_tree_program, "have_alpha");
+       GLint have_ambient_texture_location = glGetUniformLocation(christmas_tree_program, "have_ambient_texture");
+
+          std::string scene_dir = project_root + "/christmas_tree/";
+          std::string obj_path = scene_dir + "12150_Christmas_Tree_V2_L2.obj";
+
+       std::string environment_path = project_root + "/textures/winter_in_forest.jpg";
+
+          tinyobj::attrib_t attrib;
+          std::vector<tinyobj::shape_t> shapes;
+          std::vector<tinyobj::material_t> materials;
+          tinyobj::LoadObj(&attrib, &shapes, &materials, nullptr, obj_path.c_str(), scene_dir.c_str());
+
+    texture_holder textures(3);
+    textures.load_texture(environment_path);
+
+          for(auto &material : materials) {
+              std::string texture_path = scene_dir + material.ambient_texname;
+              std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
+              textures.load_texture(texture_path);
+          }
+
+          auto christmas_vertices = get_vertices(attrib, shapes);
+          auto bounding_box = get_bounding_box(christmas_vertices);
+          glm::vec3 c = std::accumulate(bounding_box.begin(), bounding_box.end(), glm::vec3(0.f)) / 8.f;
+
+          GLuint vao, vbo;
+          glGenVertexArrays(1, &vao);
+          glBindVertexArray(vao);
+          glGenBuffers(1, &vbo);
+          glBindBuffer(GL_ARRAY_BUFFER, vbo);
+          glBufferData(GL_ARRAY_BUFFER, christmas_vertices.size() * sizeof(vertex), christmas_vertices.data(), GL_STATIC_DRAW);
+          glEnableVertexAttribArray(0);
+          glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, position));
+          glEnableVertexAttribArray(1);
+          glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, tangent));
+          glEnableVertexAttribArray(2);
+          glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
+          glEnableVertexAttribArray(3);
+          glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
+
+          GLsizei shadow_map_resolution = 1024;
+          GLuint shadow_map, render_buffer, shadow_fbo;
+          glGenTextures(1, &shadow_map);
+          glGenRenderbuffers(1, &render_buffer);
+          glGenFramebuffers(1, &shadow_fbo);
+          glActiveTexture(GL_TEXTURE1);
+          glBindTexture(GL_TEXTURE_2D, shadow_map);
+          glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+          glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+          glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+          glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+          glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, shadow_map_resolution, shadow_map_resolution, 0, GL_RGBA, GL_FLOAT, nullptr);
+          glBindRenderbuffer(GL_RENDERBUFFER, render_buffer);
+          glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, shadow_map_resolution, shadow_map_resolution);
+          glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
+          glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, shadow_map, 0);
+          glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, render_buffer);
+          if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+              throw std::runtime_error("Incomplete framebuffer!");
 
     auto sphere_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/sphere.vert");
     auto sphere_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/sphere.frag");
@@ -200,22 +195,19 @@ int main() try
     GLuint camera_position_location = glGetUniformLocation(sphere_program, "camera_position");
     GLuint environment_map_texture_location = glGetUniformLocation(sphere_program, "environment_map_texture");
 
+
     GLuint sphere_vao, sphere_vbo, sphere_ebo;
     glGenVertexArrays(1, &sphere_vao);
     glBindVertexArray(sphere_vao);
     glGenBuffers(1, &sphere_vbo);
     glGenBuffers(1, &sphere_ebo);
     GLuint sphere_index_count;
-
     {
         auto [vertices, indices] = generate_sphere(1.f, 16);
-
         glBindBuffer(GL_ARRAY_BUFFER, sphere_vbo);
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vertices[0]), vertices.data(), GL_STATIC_DRAW);
-
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sphere_ebo);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(indices[0]), indices.data(), GL_STATIC_DRAW);
-
         sphere_index_count = indices.size();
     }
     glEnableVertexAttribArray(0);
@@ -226,8 +218,6 @@ int main() try
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
     glEnableVertexAttribArray(3);
     glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
-
-    GLuint environment_map_texture = load_texture(project_root + "/textures/winter_in_forest.jpg");
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
@@ -304,23 +294,98 @@ int main() try
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
         glm::mat4 view_projection_inverse = inverse(projection * view);
 
+
+        glm::vec3 light_z = -light_direction;
+        glm::vec3 light_x = glm::normalize(glm::cross(light_z, {0.f, 1.f, 0.f}));
+        glm::vec3 light_y = glm::cross(light_x, light_z);
+        float dx = -std::numeric_limits<float>::infinity();
+        float dy = -std::numeric_limits<float>::infinity();
+        float dz = -std::numeric_limits<float>::infinity();
+        for(auto _v : bounding_box) {
+            glm::vec3 v = _v - c;
+            dx = std::max(dx, glm::dot(v, light_x));
+            dy = std::max(dy, glm::dot(v, light_y));
+            dz = std::max(dz, glm::dot(v, light_z));
+        }
+        glm::mat4 transform = glm::inverse(glm::mat4({
+            {dx * light_x.x, dx * light_x.y, dx * light_x.z, 0.f},
+            {dy * light_y.x, dy * light_y.y, dy * light_y.z, 0.f},
+            {dz * light_z.x, dz * light_z.y, dz * light_z.z, 0.f},
+            {c.x, c.y, c.z, 1.f}
+        }));
+
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
+        glClearColor(1.f, 1.f, 0.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glViewport(0, 0, shadow_map_resolution, shadow_map_resolution);
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        glUseProgram(shadow_program);
+        glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+        glUniformMatrix4fv(shadow_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform));
+        glBindVertexArray(vao);
+        GLint current_block = 0;
+        for(auto &shape : shapes) {
+            auto material = materials[shape.mesh.material_ids[0]];
+            std::string texture_path = scene_dir + material.alpha_texname;
+            std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
+            glUniform1i(have_alpha_location, !material.alpha_texname.empty());
+            glUniform1i(alpha_texture_location, textures.get_texture(texture_path));
+            glDrawArrays(GL_TRIANGLES, current_block, (GLint)shape.mesh.indices.size());
+            current_block += (GLint)shape.mesh.indices.size();
+        }
+        glBindTexture(GL_TEXTURE_2D, shadow_map);
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glViewport(0, 0, width, height);
         glUseProgram(environment_program);
         glDisable(GL_DEPTH_TEST);
-
         glUniformMatrix4fv(view_projection_inverse_location, 1, GL_FALSE, reinterpret_cast<float *>(&view_projection_inverse));
         glUniform3fv(_camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
-        glUniform1i(_environment_map_texture_location, 2);
-
-        //glActiveTexture(GL_TEXTURE0);
-        //glBindTexture(GL_TEXTURE_2D, albedo_texture);
-        //glActiveTexture(GL_TEXTURE1);
-        //glBindTexture(GL_TEXTURE_2D, normal_texture);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, environment_map_texture);
-
+        glUniform1i(_environment_map_texture_location, textures.get_texture(environment_path));
         glBindVertexArray(environment_vao);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        glm::mat4 christmas_tree_model = glm::rotate(glm::mat4(1.f), -0.5f * (float)acos(-1), {1.f, 0.f, 0.f});
+        christmas_tree_model = glm::scale(christmas_tree_model, glm::vec3(0.007f));
+        christmas_tree_model = glm::translate(christmas_tree_model, glm::vec3(0.f, 0.f, -30.f));
+        glUseProgram(christmas_tree_program);
+        glUniformMatrix4fv(_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&christmas_tree_model));
+        glUniformMatrix4fv(_view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
+        glUniformMatrix4fv(_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
+        glUniformMatrix4fv(transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform));
+        glUniform3f(ambient_location, 0.2f, 0.2f, 0.2f);
+        glUniform3fv(_light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
+        glUniform3f(light_color_location, 0.8f, 0.8f, 0.8f);
+        glUniform3fv(__camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
+        glUniform1i(shadow_map_location, 1);
+        glBindVertexArray(vao);
+        current_block = 0;
+        for(auto &shape : shapes) {
+            auto material = materials[shape.mesh.material_ids[0]];
+            std::string texture_path = scene_dir + material.ambient_texname;
+            std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
+            glUniform3fv(ambient_location, 1, material.ambient);
+            glUniform1f(power_location, material.shininess);
+            glUniform1f(glossiness_location, material.specular[0]);
+            glUniform1i(texture_location, textures.get_texture(texture_path));
+            material = materials[shape.mesh.material_ids[0]];
+            texture_path = scene_dir + material.alpha_texname;
+            std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
+            glUniform1i(have_ambient_texture_location, !material.ambient_texname.empty());
+            glUniform1i(_have_alpha_location, !material.alpha_texname.empty());
+            glUniform1i(_alpha_texture_location, textures.get_texture(texture_path));
+            glDrawArrays(GL_TRIANGLES, current_block, (GLint)shape.mesh.indices.size());
+            current_block += (GLint)shape.mesh.indices.size();
+        }
 
         glUseProgram(sphere_program);
         glEnable(GL_DEPTH_TEST);
@@ -330,17 +395,7 @@ int main() try
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
         glUniform3fv(camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
-        //glUniform1i(albedo_texture_location, 0);
-        //glUniform1i(normal_texture_location, 1);
-        glUniform1i(environment_map_texture_location, 2);
-
-        //glActiveTexture(GL_TEXTURE0);
-        //glBindTexture(GL_TEXTURE_2D, albedo_texture);
-        //glActiveTexture(GL_TEXTURE1);
-        //glBindTexture(GL_TEXTURE_2D, normal_texture);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, environment_map_texture);
-
+        glUniform1i(environment_map_texture_location, textures.get_texture(environment_path));
         glBindVertexArray(sphere_vao);
         glDrawElements(GL_TRIANGLES, sphere_index_count, GL_UNSIGNED_INT, nullptr);
 
