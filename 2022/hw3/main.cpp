@@ -62,18 +62,44 @@ std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_sphere(float
     return {std::move(vertices), std::move(indices)};
 }
 
-GLuint load_texture(std::string const &path) {
-    int width, height, channels;
-    auto pixels = stbi_load(path.data(), &width, &height, &channels, 4);
-    GLuint result;
-    glGenTextures(1, &result);
-    glBindTexture(GL_TEXTURE_2D, result);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    stbi_image_free(pixels);
-    return result;
+std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_floor(float radius, int quality) {
+    std::vector<vertex> vertices;
+    for (int latitude = -quality; latitude <= 0; ++latitude) {
+        for (int longitude = 0; longitude <= 4 * quality; ++longitude) {
+            float lat = (latitude * glm::pi<float>()) / (2.f * quality);
+            float lon = (longitude * glm::pi<float>()) / (2.f * quality);
+            auto &vertex = vertices.emplace_back();
+            vertex.normal = {std::cos(lat) * std::cos(lon), std::sin(lat), std::cos(lat) * std::sin(lon)};
+            vertex.position = vertex.normal * radius;
+            //vertex.tangent = {-std::cos(lat) * std::sin(lon), 0.f, std::cos(lat) * std::cos(lon)};
+            //vertex.texcoords.x = (longitude * 1.f) / (4.f * quality);
+            //vertex.texcoords.y = (latitude * 1.f) / (2.f * quality) + 0.5f;
+        }
+    }
+    auto &vertex = vertices.emplace_back();
+    vertex.normal = glm::vec3(0.f, 0.f, 1.f);
+    vertex.position = glm::vec3(0.f);
+    //vertex.tangent = {-std::cos(lat) * std::sin(lon), 0.f, std::cos(lat) * std::cos(lon)};
+    //vertex.texcoords.x = (longitude * 1.f) / (4.f * quality);
+    //vertex.texcoords.y = (latitude * 1.f) / (2.f * quality) + 0.5f;
+
+    std::vector<std::uint32_t> indices;
+    for (int latitude = 0; latitude < quality; ++latitude) {
+        for (int longitude = 0; longitude < 4 * quality; ++longitude) {
+            std::uint32_t i0 = (latitude + 0) * (4 * quality + 1) + (longitude + 0);
+            std::uint32_t i1 = (latitude + 1) * (4 * quality + 1) + (longitude + 0);
+            std::uint32_t i2 = (latitude + 0) * (4 * quality + 1) + (longitude + 1);
+            std::uint32_t i3 = (latitude + 1) * (4 * quality + 1) + (longitude + 1);
+            indices.insert(indices.end(), {i0, i1, i2, i2, i1, i3});
+        }
+    }
+    for (int longitude = 0; longitude < 4 * quality; ++longitude) {
+        std::uint32_t i0 = vertices.size() - 1;
+        std::uint32_t i1 = (quality) * (4 * quality + 1) + (longitude + 0);
+        std::uint32_t i2 = (quality) * (4 * quality + 1) + (longitude + 1);
+        indices.insert(indices.end(), {i0, i2, i1});
+    }
+    return {std::move(vertices), std::move(indices)};
 }
 
 int main() try {
@@ -103,83 +129,83 @@ int main() try {
     GLint alpha_texture_location = glGetUniformLocation(shadow_program, "alpha_texture");
     GLint have_alpha_location = glGetUniformLocation(shadow_program, "have_alpha");
 
-       auto christmas_tree_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/christmas_tree.vert");
-       auto christmas_tree_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/christmas_tree.frag");
-       auto christmas_tree_program = create_program(christmas_tree_vertex_shader, christmas_tree_fragment_shader);
+    auto christmas_tree_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/christmas_tree.vert");
+    auto christmas_tree_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/christmas_tree.frag");
+    auto christmas_tree_program = create_program(christmas_tree_vertex_shader, christmas_tree_fragment_shader);
 
-       GLint _model_location = glGetUniformLocation(christmas_tree_program, "model");
-       GLint _view_location = glGetUniformLocation(christmas_tree_program, "view");
-       GLint _projection_location = glGetUniformLocation(christmas_tree_program, "projection");
-       GLint ambient_location = glGetUniformLocation(christmas_tree_program, "ambient_color");
-       GLint texture_location = glGetUniformLocation(christmas_tree_program, "ambient_texture");
-       GLint shadow_map_location = glGetUniformLocation(christmas_tree_program, "shadow_map");
-       GLint transform_location = glGetUniformLocation(christmas_tree_program, "transform");
-       GLint _light_direction_location = glGetUniformLocation(christmas_tree_program, "light_direction");
-       GLint light_color_location = glGetUniformLocation(christmas_tree_program, "light_color");
-       GLint glossiness_location = glGetUniformLocation(christmas_tree_program, "glossiness");
-       GLint power_location = glGetUniformLocation(christmas_tree_program, "power");
-       GLint __camera_position_location = glGetUniformLocation(christmas_tree_program, "camera_position");
-       GLint _alpha_texture_location = glGetUniformLocation(christmas_tree_program, "alpha_texture");
-       GLint _have_alpha_location = glGetUniformLocation(christmas_tree_program, "have_alpha");
-       GLint have_ambient_texture_location = glGetUniformLocation(christmas_tree_program, "have_ambient_texture");
+    GLint _model_location = glGetUniformLocation(christmas_tree_program, "model");
+    GLint _view_location = glGetUniformLocation(christmas_tree_program, "view");
+    GLint _projection_location = glGetUniformLocation(christmas_tree_program, "projection");
+    GLint ambient_location = glGetUniformLocation(christmas_tree_program, "ambient_color");
+    GLint texture_location = glGetUniformLocation(christmas_tree_program, "ambient_texture");
+    GLint shadow_map_location = glGetUniformLocation(christmas_tree_program, "shadow_map");
+    GLint transform_location = glGetUniformLocation(christmas_tree_program, "transform");
+    GLint _light_direction_location = glGetUniformLocation(christmas_tree_program, "light_direction");
+    GLint light_color_location = glGetUniformLocation(christmas_tree_program, "light_color");
+    GLint glossiness_location = glGetUniformLocation(christmas_tree_program, "glossiness");
+    GLint power_location = glGetUniformLocation(christmas_tree_program, "power");
+    GLint __camera_position_location = glGetUniformLocation(christmas_tree_program, "camera_position");
+    GLint _alpha_texture_location = glGetUniformLocation(christmas_tree_program, "alpha_texture");
+    GLint _have_alpha_location = glGetUniformLocation(christmas_tree_program, "have_alpha");
+    GLint have_ambient_texture_location = glGetUniformLocation(christmas_tree_program, "have_ambient_texture");
 
-          std::string scene_dir = project_root + "/christmas_tree/";
-          std::string obj_path = scene_dir + "12150_Christmas_Tree_V2_L2.obj";
+    std::string scene_dir = project_root + "/christmas_tree/";
+    std::string obj_path = scene_dir + "12150_Christmas_Tree_V2_L2.obj";
 
-       std::string environment_path = project_root + "/textures/winter_in_forest.jpg";
+    std::string environment_path = project_root + "/textures/winter_in_forest.jpg";
 
-          tinyobj::attrib_t attrib;
-          std::vector<tinyobj::shape_t> shapes;
-          std::vector<tinyobj::material_t> materials;
-          tinyobj::LoadObj(&attrib, &shapes, &materials, nullptr, obj_path.c_str(), scene_dir.c_str());
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+    tinyobj::LoadObj(&attrib, &shapes, &materials, nullptr, obj_path.c_str(), scene_dir.c_str());
 
     texture_holder textures(3);
     textures.load_texture(environment_path);
 
-          for(auto &material : materials) {
-              std::string texture_path = scene_dir + material.ambient_texname;
-              std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
-              textures.load_texture(texture_path);
-          }
+    for(auto &material : materials) {
+        std::string texture_path = scene_dir + material.ambient_texname;
+        std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
+        textures.load_texture(texture_path);
+    }
 
-          auto christmas_vertices = get_vertices(attrib, shapes);
-          auto bounding_box = get_bounding_box(christmas_vertices);
-          glm::vec3 c = std::accumulate(bounding_box.begin(), bounding_box.end(), glm::vec3(0.f)) / 8.f;
+    auto christmas_vertices = get_vertices(attrib, shapes);
+    auto bounding_box = get_bounding_box(christmas_vertices);
+    glm::vec3 c = std::accumulate(bounding_box.begin(), bounding_box.end(), glm::vec3(0.f)) / 8.f;
 
-          GLuint vao, vbo;
-          glGenVertexArrays(1, &vao);
-          glBindVertexArray(vao);
-          glGenBuffers(1, &vbo);
-          glBindBuffer(GL_ARRAY_BUFFER, vbo);
-          glBufferData(GL_ARRAY_BUFFER, christmas_vertices.size() * sizeof(vertex), christmas_vertices.data(), GL_STATIC_DRAW);
-          glEnableVertexAttribArray(0);
-          glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, position));
-          glEnableVertexAttribArray(1);
-          glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, tangent));
-          glEnableVertexAttribArray(2);
-          glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
-          glEnableVertexAttribArray(3);
-          glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
+    GLuint vao, vbo;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, christmas_vertices.size() * sizeof(vertex), christmas_vertices.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, position));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, tangent));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
 
-          GLsizei shadow_map_resolution = 1024;
-          GLuint shadow_map, render_buffer, shadow_fbo;
-          glGenTextures(1, &shadow_map);
-          glGenRenderbuffers(1, &render_buffer);
-          glGenFramebuffers(1, &shadow_fbo);
-          glActiveTexture(GL_TEXTURE1);
-          glBindTexture(GL_TEXTURE_2D, shadow_map);
-          glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-          glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-          glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-          glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-          glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, shadow_map_resolution, shadow_map_resolution, 0, GL_RGBA, GL_FLOAT, nullptr);
-          glBindRenderbuffer(GL_RENDERBUFFER, render_buffer);
-          glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, shadow_map_resolution, shadow_map_resolution);
-          glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
-          glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, shadow_map, 0);
-          glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, render_buffer);
-          if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-              throw std::runtime_error("Incomplete framebuffer!");
+    GLsizei shadow_map_resolution = 1024;
+    GLuint shadow_map, render_buffer, shadow_fbo;
+    glGenTextures(1, &shadow_map);
+    glGenRenderbuffers(1, &render_buffer);
+    glGenFramebuffers(1, &shadow_fbo);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, shadow_map);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, shadow_map_resolution, shadow_map_resolution, 0, GL_RGBA, GL_FLOAT, nullptr);
+    glBindRenderbuffer(GL_RENDERBUFFER, render_buffer);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, shadow_map_resolution, shadow_map_resolution);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
+    glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, shadow_map, 0);
+    glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, render_buffer);
+    if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        throw std::runtime_error("Incomplete framebuffer!");
 
     auto sphere_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/sphere.vert");
     auto sphere_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/sphere.frag");
@@ -194,7 +220,6 @@ int main() try {
     GLuint light_direction_location = glGetUniformLocation(sphere_program, "light_direction");
     GLuint camera_position_location = glGetUniformLocation(sphere_program, "camera_position");
     GLuint environment_map_texture_location = glGetUniformLocation(sphere_program, "environment_map_texture");
-
 
     GLuint sphere_vao, sphere_vbo, sphere_ebo;
     glGenVertexArrays(1, &sphere_vao);
@@ -218,6 +243,41 @@ int main() try {
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
     glEnableVertexAttribArray(3);
     glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
+
+
+    auto floor_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/floor.vert");
+    auto floor_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/floor.frag");
+    auto floor_program = create_program(floor_vertex_shader, floor_fragment_shader);
+
+    GLuint __model_location = glGetUniformLocation(floor_program, "model");
+    GLuint __view_location = glGetUniformLocation(floor_program, "view");
+    GLuint __projection_location = glGetUniformLocation(floor_program, "projection");
+    GLuint __light_direction_location = glGetUniformLocation(floor_program, "light_direction");
+    GLuint ___camera_position_location = glGetUniformLocation(floor_program, "camera_position");
+
+    GLuint floor_vao, floor_vbo, floor_ebo;
+    glGenVertexArrays(1, &floor_vao);
+    glBindVertexArray(floor_vao);
+    glGenBuffers(1, &floor_vbo);
+    glGenBuffers(1, &floor_ebo);
+    GLuint floor_index_count;
+    {
+        auto [vertices, indices] = generate_floor(0.97f, 16);
+        glBindBuffer(GL_ARRAY_BUFFER, floor_vbo);
+        glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vertices[0]), vertices.data(), GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, floor_ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(indices[0]), indices.data(), GL_STATIC_DRAW);
+        floor_index_count = indices.size();
+    }
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, position));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, tangent));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
+
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
@@ -289,7 +349,8 @@ int main() try {
         glm::mat4 projection = glm::mat4(1.f);
         projection = glm::perspective(glm::pi<float>() / 2.f, (1.f * width) / height, near, far);
 
-        glm::vec3 light_direction = glm::normalize(glm::vec3(1.f, 2.f, 3.f));
+        //glm::vec3 light_direction = glm::normalize(glm::vec3(1.f, 2.f, 3.f));
+        glm::vec3 light_direction = glm::normalize(glm::vec3(1.f * cos(time), 2.f * sin(time), 3.f));
 
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
         glm::mat4 view_projection_inverse = inverse(projection * view);
@@ -386,6 +447,17 @@ int main() try {
             glDrawArrays(GL_TRIANGLES, current_block, (GLint)shape.mesh.indices.size());
             current_block += (GLint)shape.mesh.indices.size();
         }
+
+        glUseProgram(floor_program);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_CULL_FACE);
+        glUniformMatrix4fv(__model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+        glUniformMatrix4fv(__view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
+        glUniformMatrix4fv(__projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
+        glUniform3fv(__light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
+        glUniform3fv(___camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
+        glBindVertexArray(floor_vao);
+        glDrawElements(GL_TRIANGLES, floor_index_count, GL_UNSIGNED_INT, nullptr);
 
         glUseProgram(sphere_program);
         glEnable(GL_DEPTH_TEST);
