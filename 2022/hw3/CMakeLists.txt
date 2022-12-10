@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0)
-project(practice10)
+project(hw3)
 
 cmake_policy(SET CMP0072 NEW)
 cmake_policy(SET CMP0074 NEW)
@@ -24,7 +24,12 @@ set(TARGET_NAME "${PROJECT_NAME}")
 
 set(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 
-add_executable(${TARGET_NAME} main.cpp obj_parser.hpp obj_parser.cpp stb_image.h stb_image.c)
+add_executable(${TARGET_NAME} main.cpp
+		tiny_obj_loader.h
+		texture_holder.hpp texture_holder.cpp
+		obj_parser.hpp obj_parser.cpp
+		stb_image.h stb_image.c
+		utils.hpp utils.cpp)
 target_include_directories(${TARGET_NAME} PUBLIC
 	"${SDL2_INCLUDE_DIRS}"
 	"${GLEW_INCLUDE_DIRS}"
