@@ -41,7 +41,7 @@ std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_sphere(float
         for (int longitude = 0; longitude <= 4 * quality; ++longitude) {
             float lat = (latitude * glm::pi<float>()) / (2.f * quality);
             float lon = (longitude * glm::pi<float>()) / (2.f * quality);
-            auto & vertex = vertices.emplace_back();
+            auto &vertex = vertices.emplace_back();
             vertex.normal = {std::cos(lat) * std::cos(lon), std::sin(lat), std::cos(lat) * std::sin(lon)};
             vertex.position = vertex.normal * radius;
             vertex.tangent = {-std::cos(lat) * std::sin(lon), 0.f, std::cos(lat) * std::cos(lon)};
@@ -62,11 +62,11 @@ std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_sphere(float
     return {std::move(vertices), std::move(indices)};
 }
 
-std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_floor(float radius, int quality) {
+std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_floor(float radius, int quality, float angle) {
     std::vector<vertex> vertices;
-    for (int latitude = -quality; latitude <= 0; ++latitude) {
+    for (int latitude = 0; latitude <= quality; ++latitude) {
         for (int longitude = 0; longitude <= 4 * quality; ++longitude) {
-            float lat = (latitude * glm::pi<float>()) / (2.f * quality);
+            float lat = (latitude * angle) / quality - glm::pi<float>() / 2.f;
             float lon = (longitude * glm::pi<float>()) / (2.f * quality);
             auto &vertex = vertices.emplace_back();
             vertex.normal = {std::cos(lat) * std::cos(lon), std::sin(lat), std::cos(lat) * std::sin(lon)};
@@ -77,8 +77,8 @@ std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_floor(float 
         }
     }
     auto &vertex = vertices.emplace_back();
-    vertex.normal = glm::vec3(0.f, 0.f, 1.f);
-    vertex.position = glm::vec3(0.f);
+    vertex.normal = glm::vec3(0.f, 1.f, 0.f);
+    vertex.position = glm::vec3(0.f, std::sin(angle - glm::pi<float>() / 2.f) * radius, 0.f);
     //vertex.tangent = {-std::cos(lat) * std::sin(lon), 0.f, std::cos(lat) * std::cos(lon)};
     //vertex.texcoords.x = (longitude * 1.f) / (4.f * quality);
     //vertex.texcoords.y = (latitude * 1.f) / (2.f * quality) + 0.5f;
@@ -244,6 +244,7 @@ int main() try {
     glEnableVertexAttribArray(3);
     glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
 
+    float floor_angle = 0.4f * acos(-1);
 
     auto floor_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/floor.vert");
     auto floor_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/floor.frag");
@@ -262,7 +263,7 @@ int main() try {
     glGenBuffers(1, &floor_ebo);
     GLuint floor_index_count;
     {
-        auto [vertices, indices] = generate_floor(0.97f, 16);
+        auto [vertices, indices] = generate_floor(0.97f, 16, floor_angle);
         glBindBuffer(GL_ARRAY_BUFFER, floor_vbo);
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vertices[0]), vertices.data(), GL_STATIC_DRAW);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, floor_ebo);
@@ -285,7 +286,7 @@ int main() try {
 
     std::map<SDL_Keycode, bool> button_down;
 
-    float view_elevation = glm::radians(30.f);
+    float view_elevation = glm::radians(20.f);
     float view_azimuth = 0.f;
     float camera_distance = 2.f;
 
@@ -332,6 +333,11 @@ int main() try {
         if (button_down[SDLK_RIGHT])
             view_azimuth += 2.f * dt;
 
+        if (button_down[SDLK_w])
+            view_elevation += 2.f * dt;
+        if (button_down[SDLK_s])
+            view_elevation -= 2.f * dt;
+
         glEnable(GL_BLEND);
         glBlendEquation(GL_FUNC_ADD);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -339,8 +345,9 @@ int main() try {
         float near = 0.1f;
         float far = 100.f;
 
-        glm::mat4 model = glm::rotate(glm::mat4(1.f), time * 0.1f, {0.f, 1.f, 0.f});
-
+        glm::mat4 christmas_tree_model = glm::rotate(glm::mat4(1.f), -0.5f * glm::pi<float>(), {1.f, 0.f, 0.f});
+        christmas_tree_model = glm::scale(christmas_tree_model, glm::vec3(0.007f));
+        christmas_tree_model = glm::translate(christmas_tree_model, glm::vec3(0.f, 0.f, -44.f));
         glm::mat4 view(1.f);
         view = glm::translate(view, {0.f, 0.f, -camera_distance});
         view = glm::rotate(view, view_elevation, {1.f, 0.f, 0.f});
@@ -349,7 +356,6 @@ int main() try {
         glm::mat4 projection = glm::mat4(1.f);
         projection = glm::perspective(glm::pi<float>() / 2.f, (1.f * width) / height, near, far);
 
-        //glm::vec3 light_direction = glm::normalize(glm::vec3(1.f, 2.f, 3.f));
         glm::vec3 light_direction = glm::normalize(glm::vec3(1.f * cos(time), 2.f * sin(time), 3.f));
 
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
@@ -385,7 +391,7 @@ int main() try {
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
         glUseProgram(shadow_program);
-        glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+        glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&christmas_tree_model));
         glUniformMatrix4fv(shadow_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform));
         glBindVertexArray(vao);
         GLint current_block = 0;
@@ -415,9 +421,7 @@ int main() try {
         glDepthFunc(GL_LEQUAL);
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
-        glm::mat4 christmas_tree_model = glm::rotate(glm::mat4(1.f), -0.5f * (float)acos(-1), {1.f, 0.f, 0.f});
-        christmas_tree_model = glm::scale(christmas_tree_model, glm::vec3(0.007f));
-        christmas_tree_model = glm::translate(christmas_tree_model, glm::vec3(0.f, 0.f, -30.f));
+
         glUseProgram(christmas_tree_program);
         glUniformMatrix4fv(_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&christmas_tree_model));
         glUniformMatrix4fv(_view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
@@ -448,10 +452,12 @@ int main() try {
             current_block += (GLint)shape.mesh.indices.size();
         }
 
+        glm::mat4 sphere_model(1.f);
+
         glUseProgram(floor_program);
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
-        glUniformMatrix4fv(__model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+        glUniformMatrix4fv(__model_location, 1, GL_FALSE, reinterpret_cast<float *>(&sphere_model));
         glUniformMatrix4fv(__view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(__projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(__light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
@@ -462,7 +468,7 @@ int main() try {
         glUseProgram(sphere_program);
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
-        glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+        glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&sphere_model));
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(light_direction_location, 1, reinterpret_cast<float *>(&light_direction));

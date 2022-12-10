@@ -14,7 +14,7 @@ out vec3 normal;
 
 void main() {
     position = (model * vec4(in_position, 1.0)).xyz;
-    gl_Position = projection * view * vec4(position, 1.0);
+    gl_Position = projection * view * model * vec4(position, 1.0);
     tangent = mat3(model) * in_tangent;
     normal = normalize(mat3(model) * in_normal);
 }
