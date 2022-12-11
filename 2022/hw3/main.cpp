@@ -35,73 +35,6 @@
 #include <fstream>
 #include "utils.hpp"
 
-std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_sphere(float radius, int quality) {
-    std::vector<vertex> vertices;
-    for (int latitude = -quality; latitude <= quality; ++latitude) {
-        for (int longitude = 0; longitude <= 4 * quality; ++longitude) {
-            float lat = (latitude * glm::pi<float>()) / (2.f * quality);
-            float lon = (longitude * glm::pi<float>()) / (2.f * quality);
-            auto &vertex = vertices.emplace_back();
-            vertex.normal = {std::cos(lat) * std::cos(lon), std::sin(lat), std::cos(lat) * std::sin(lon)};
-            vertex.position = vertex.normal * radius;
-            vertex.tangent = {-std::cos(lat) * std::sin(lon), 0.f, std::cos(lat) * std::cos(lon)};
-            vertex.texcoords.x = (longitude * 1.f) / (4.f * quality);
-            vertex.texcoords.y = (latitude * 1.f) / (2.f * quality) + 0.5f;
-        }
-    }
-    std::vector<std::uint32_t> indices;
-    for (int latitude = 0; latitude < 2 * quality; ++latitude) {
-        for (int longitude = 0; longitude < 4 * quality; ++longitude) {
-            std::uint32_t i0 = (latitude + 0) * (4 * quality + 1) + (longitude + 0);
-            std::uint32_t i1 = (latitude + 1) * (4 * quality + 1) + (longitude + 0);
-            std::uint32_t i2 = (latitude + 0) * (4 * quality + 1) + (longitude + 1);
-            std::uint32_t i3 = (latitude + 1) * (4 * quality + 1) + (longitude + 1);
-            indices.insert(indices.end(), {i0, i1, i2, i2, i1, i3});
-        }
-    }
-    return {std::move(vertices), std::move(indices)};
-}
-
-std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_floor(float radius, int quality, float angle) {
-    std::vector<vertex> vertices;
-    for (int latitude = 0; latitude <= quality; ++latitude) {
-        for (int longitude = 0; longitude <= 4 * quality; ++longitude) {
-            float lat = (latitude * angle) / quality - glm::pi<float>() / 2.f;
-            float lon = (longitude * glm::pi<float>()) / (2.f * quality);
-            auto &vertex = vertices.emplace_back();
-            vertex.normal = {std::cos(lat) * std::cos(lon), std::sin(lat), std::cos(lat) * std::sin(lon)};
-            vertex.position = vertex.normal * radius;
-            //vertex.tangent = {-std::cos(lat) * std::sin(lon), 0.f, std::cos(lat) * std::cos(lon)};
-            //vertex.texcoords.x = (longitude * 1.f) / (4.f * quality);
-            //vertex.texcoords.y = (latitude * 1.f) / (2.f * quality) + 0.5f;
-        }
-    }
-    auto &vertex = vertices.emplace_back();
-    vertex.normal = glm::vec3(0.f, 1.f, 0.f);
-    vertex.position = glm::vec3(0.f, std::sin(angle - glm::pi<float>() / 2.f) * radius, 0.f);
-    //vertex.tangent = {-std::cos(lat) * std::sin(lon), 0.f, std::cos(lat) * std::cos(lon)};
-    //vertex.texcoords.x = (longitude * 1.f) / (4.f * quality);
-    //vertex.texcoords.y = (latitude * 1.f) / (2.f * quality) + 0.5f;
-
-    std::vector<std::uint32_t> indices;
-    for (int latitude = 0; latitude < quality; ++latitude) {
-        for (int longitude = 0; longitude < 4 * quality; ++longitude) {
-            std::uint32_t i0 = (latitude + 0) * (4 * quality + 1) + (longitude + 0);
-            std::uint32_t i1 = (latitude + 1) * (4 * quality + 1) + (longitude + 0);
-            std::uint32_t i2 = (latitude + 0) * (4 * quality + 1) + (longitude + 1);
-            std::uint32_t i3 = (latitude + 1) * (4 * quality + 1) + (longitude + 1);
-            indices.insert(indices.end(), {i0, i1, i2, i2, i1, i3});
-        }
-    }
-    for (int longitude = 0; longitude < 4 * quality; ++longitude) {
-        std::uint32_t i0 = vertices.size() - 1;
-        std::uint32_t i1 = (quality) * (4 * quality + 1) + (longitude + 0);
-        std::uint32_t i2 = (quality) * (4 * quality + 1) + (longitude + 1);
-        indices.insert(indices.end(), {i0, i2, i1});
-    }
-    return {std::move(vertices), std::move(indices)};
-}
-
 int main() try {
     auto *window = create_window("Homework 3");
     auto gl_context = create_context(window);
@@ -150,8 +83,9 @@ int main() try {
     GLint have_ambient_texture_location = glGetUniformLocation(christmas_tree_program, "have_ambient_texture");
 
     std::string scene_dir = project_root + "/christmas_tree/";
+    //std::string scene_dir = project_root + "/bunny/";
     std::string obj_path = scene_dir + "12150_Christmas_Tree_V2_L2.obj";
-
+    //std::string obj_path = scene_dir + "bunny.obj";
     std::string environment_path = project_root + "/textures/winter_in_forest.jpg";
 
     tinyobj::attrib_t attrib;
@@ -248,6 +182,7 @@ int main() try {
 
     auto floor_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/floor.vert");
     auto floor_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/floor.frag");
+
     auto floor_program = create_program(floor_vertex_shader, floor_fragment_shader);
 
     GLuint __model_location = glGetUniformLocation(floor_program, "model");
@@ -255,6 +190,8 @@ int main() try {
     GLuint __projection_location = glGetUniformLocation(floor_program, "projection");
     GLuint __light_direction_location = glGetUniformLocation(floor_program, "light_direction");
     GLuint ___camera_position_location = glGetUniformLocation(floor_program, "camera_position");
+    GLuint _transform_location = glGetUniformLocation(floor_program, "transform");
+    GLuint _shadow_map_location = glGetUniformLocation(floor_program, "shadow_map");
 
     GLuint floor_vao, floor_vbo, floor_ebo;
     glGenVertexArrays(1, &floor_vao);
@@ -356,11 +293,10 @@ int main() try {
         glm::mat4 projection = glm::mat4(1.f);
         projection = glm::perspective(glm::pi<float>() / 2.f, (1.f * width) / height, near, far);
 
-        glm::vec3 light_direction = glm::normalize(glm::vec3(1.f * cos(time), 2.f * sin(time), 3.f));
+        glm::vec3 light_direction = glm::normalize(glm::vec3(1.f, 2.f, 3.f));
 
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
         glm::mat4 view_projection_inverse = inverse(projection * view);
-
 
         glm::vec3 light_z = -light_direction;
         glm::vec3 light_x = glm::normalize(glm::cross(light_z, {0.f, 1.f, 0.f}));
@@ -380,7 +316,6 @@ int main() try {
             {dz * light_z.x, dz * light_z.y, dz * light_z.z, 0.f},
             {c.x, c.y, c.z, 1.f}
         }));
-
 
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
         glClearColor(1.f, 1.f, 0.f, 0.f);
@@ -404,6 +339,7 @@ int main() try {
             glDrawArrays(GL_TRIANGLES, current_block, (GLint)shape.mesh.indices.size());
             current_block += (GLint)shape.mesh.indices.size();
         }
+
         glBindTexture(GL_TEXTURE_2D, shadow_map);
         glGenerateMipmap(GL_TEXTURE_2D);
 
@@ -462,6 +398,8 @@ int main() try {
         glUniformMatrix4fv(__projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(__light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
         glUniform3fv(___camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
+        glUniform1i(_shadow_map_location, 1);
+        glUniformMatrix4fv(_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform));
         glBindVertexArray(floor_vao);
         glDrawElements(GL_TRIANGLES, floor_index_count, GL_UNSIGNED_INT, nullptr);
 
