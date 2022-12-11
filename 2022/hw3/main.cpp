@@ -107,11 +107,8 @@ int main() try {
     christmas_tree_model = glm::translate(christmas_tree_model, glm::vec3(0.f, 0.f, -44.f));
 
     auto christmas_vertices = get_vertices(attrib, shapes);
-    auto shadow_scene = christmas_vertices;
-    for(auto &i : shadow_scene)
-        i.position = christmas_tree_model * glm::vec4(i.position, 1.0);
-    auto bounding_box = get_bounding_box(shadow_scene);
-    glm::vec3 c = std::accumulate(bounding_box.begin(), bounding_box.end(), glm::vec3(0.f)) / 8.f;
+    bounding_box bounding_box;
+    glm::vec3 c;
 
     GLuint vao, vbo;
     glGenVertexArrays(1, &vao);
@@ -170,6 +167,8 @@ int main() try {
     GLuint sphere_index_count;
     {
         auto [vertices, indices] = generate_sphere(1.f, 16);
+        bounding_box = get_bounding_box(vertices);
+        c = std::accumulate(bounding_box.begin(), bounding_box.end(), glm::vec3(0.f)) / 8.f;
         glBindBuffer(GL_ARRAY_BUFFER, sphere_vbo);
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vertices[0]), vertices.data(), GL_STATIC_DRAW);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sphere_ebo);
@@ -229,10 +228,6 @@ int main() try {
     GLuint __shadow_map_location = glGetUniformLocation(debug_program, "shadow_map");
     GLuint debug_vao;
     glGenVertexArrays(1, &debug_vao);
-
-
-
-
 
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
@@ -304,7 +299,7 @@ int main() try {
         glm::mat4 projection = glm::mat4(1.f);
         projection = glm::perspective(glm::pi<float>() / 2.f, (1.f * width) / height, near, far);
 
-        glm::vec3 light_direction = glm::normalize(glm::vec3(1.f, 2.f, 3.f));
+        glm::vec3 light_direction = glm::normalize(glm::vec3(2.f * cos(time), 2.f, 2.f * sin(time)));
 
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
         glm::mat4 view_projection_inverse = inverse(projection * view);
