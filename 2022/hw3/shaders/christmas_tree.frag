@@ -72,7 +72,7 @@ void main() {
     if(have_ambient_texture == 1) {
         albedo = vec3(texture(ambient_texture, tex_coord));
     }
-    vec3 light = ambient + light_color /** phong(light_direction)*/ * shadow_factor;
+    vec3 light = ambient + light_color * phong(light_direction) * shadow_factor;
     vec3 color = albedo * light;
     out_color = vec4(color, 1.0);
 
