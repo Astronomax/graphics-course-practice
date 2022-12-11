@@ -11,7 +11,6 @@ std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_sphere(float
             auto &vertex = vertices.emplace_back();
             vertex.normal = {std::cos(lat) * std::cos(lon), std::sin(lat), std::cos(lat) * std::sin(lon)};
             vertex.position = vertex.normal * radius;
-            vertex.tangent = {-std::cos(lat) * std::sin(lon), 0.f, std::cos(lat) * std::cos(lon)};
             vertex.texcoords.x = (longitude * 1.f) / (4.f * quality);
             vertex.texcoords.y = (latitude * 1.f) / (2.f * quality) + 0.5f;
         }
@@ -169,10 +168,6 @@ std::vector<vertex> get_vertices(
                     attrib.vertices[3 * i.vertex_index],
                     attrib.vertices[3 * i.vertex_index + 1],
                     attrib.vertices[3 * i.vertex_index + 2]
-                }, {
-                    0.f,
-                    0.f,
-                    0.f
                 }, {
                     attrib.normals[3 * i.normal_index],
                     attrib.normals[3 * i.normal_index + 1],
