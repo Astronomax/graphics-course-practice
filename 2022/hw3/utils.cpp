@@ -104,23 +104,6 @@ GLuint create_shader(GLenum type, const std::string &file_path) {
     return result;
 }
 
-GLuint create_program(GLuint vertex_shader, GLuint fragment_shader) {
-    GLuint result = glCreateProgram();
-    glAttachShader(result, vertex_shader);
-    glAttachShader(result, fragment_shader);
-    glLinkProgram(result);
-    GLint status;
-    glGetProgramiv(result, GL_LINK_STATUS, &status);
-    if (status != GL_TRUE) {
-        GLint info_log_length;
-        glGetProgramiv(result, GL_INFO_LOG_LENGTH, &info_log_length);
-        std::string info_log(info_log_length, '\0');
-        glGetProgramInfoLog(result, info_log.size(), nullptr, info_log.data());
-        throw std::runtime_error("Program linkage failed: " + info_log);
-    }
-    return result;
-}
-
 SDL_Window *create_window(const std::string &window_title) {
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
         sdl2_fail("SDL_Init: ");

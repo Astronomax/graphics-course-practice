@@ -34,6 +34,7 @@
 #include "gltf_loader.hpp"
 #include "texture_holder.hpp"
 #include <fstream>
+#include <random>
 #include "utils.hpp"
 
 int main() try {
@@ -85,11 +86,11 @@ int main() try {
     GLint _have_alpha_location = glGetUniformLocation(christmas_tree_program, "have_alpha");
     GLint have_ambient_texture_location = glGetUniformLocation(christmas_tree_program, "have_ambient_texture");
 
-
     std::string christmas_tree_dir = project_root + "/christmas_tree/";
     std::string christmas_tree_path = christmas_tree_dir + "12150_Christmas_Tree_V2_L2.obj";
     std::string environment_path = project_root + "/textures/winter_in_forest.jpg";
     std::string wolf_dir = project_root + "/wolf/";
+    std::string particle_texture_path = project_root + "/particles/particle.png";
 
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
@@ -98,6 +99,7 @@ int main() try {
 
     texture_holder textures(3);
     textures.load_texture(environment_path);
+    textures.load_texture(particle_texture_path);
 
     for(auto &material : materials) {
         std::string texture_path = christmas_tree_dir + material.ambient_texname;
@@ -122,8 +124,6 @@ int main() try {
     glBufferData(GL_ARRAY_BUFFER, christmas_vertices.size() * sizeof(vertex), christmas_vertices.data(), GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, position));
-    //glEnableVertexAttribArray(1);
-    //glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, tangent));
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
     glEnableVertexAttribArray(2);
@@ -181,8 +181,6 @@ int main() try {
     }
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, position));
-    //glEnableVertexAttribArray(1);
-    //glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, tangent));
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
     glEnableVertexAttribArray(2);
@@ -219,8 +217,6 @@ int main() try {
     }
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, position));
-    //glEnableVertexAttribArray(1);
-    //glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, tangent));
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
     glEnableVertexAttribArray(2);
@@ -249,7 +245,7 @@ int main() try {
     GLuint ___shadow_map_location = glGetUniformLocation(wolf_program, "shadow_map");
     GLint __transform_location = glGetUniformLocation(wolf_program, "transform");
 
-    const std::string model_path = project_root + "/wolf/Wolf-Blender-2.82a.gltf";
+    std::string model_path = project_root + "/wolf/Wolf-Blender-2.82a.gltf";
 
     auto const input_model = load_gltf(model_path);
     GLuint wolf_vbo;
@@ -296,6 +292,32 @@ int main() try {
         if (!mesh.material.texture_path) continue;
         textures.load_texture(wolf_dir + *mesh.material.texture_path);
     }
+
+    std::default_random_engine rng;
+    std::vector<particle> particles;
+
+    auto snow_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/snow.vert");
+    auto snow_geometry_shader = create_shader(GL_GEOMETRY_SHADER, project_root + "/shaders/snow.geom");
+    auto snow_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/snow.frag");
+    auto snow_program = create_program(snow_vertex_shader, snow_geometry_shader, snow_fragment_shader);
+
+    GLuint ____model_location = glGetUniformLocation(snow_program, "model");
+    GLuint ____view_location = glGetUniformLocation(snow_program, "view");
+    GLuint ____projection_location = glGetUniformLocation(snow_program, "projection");
+    GLuint ____camera_position_location = glGetUniformLocation(snow_program, "camera_position");
+    GLuint _texture_location = glGetUniformLocation(snow_program, "_texture");
+
+    GLuint snow_vao, snow_vbo;
+    glGenVertexArrays(1, &snow_vao);
+    glBindVertexArray(snow_vao);
+    glGenBuffers(1, &snow_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, snow_vbo);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(particle), (void*)(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, sizeof(particle), (void*)(12));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(particle), (void*)(16));
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
@@ -391,6 +413,35 @@ int main() try {
             {dz * light_z.x, dz * light_z.y, dz * light_z.z, 0.f},
             {c.x, c.y, c.z, 1.f}
         }));
+
+        float A = -1.5, B = 0.1, C = 0.1;
+
+        for(auto &p : particles) {
+            if(p.position.y < std::sin(floor_angle - glm::pi<float>() / 2.f)) {
+                float lat = std::uniform_real_distribution<float>{0.5f * glm::pi<float>() - floor_angle, 0.5f * glm::pi<float>()}(rng);
+                float lon = std::uniform_real_distribution<float>{0.f, 2.f * glm::pi<float>()}(rng);
+                p.position = glm::vec3(std::cos(lat) * std::cos(lon), std::sin(lat), std::cos(lat) * std::sin(lon)) * 0.97f;
+                p.size = std::uniform_real_distribution<float>{0.01f, 0.03f}(rng);
+                p.velocity.y = -std::uniform_real_distribution<float>{0.0f, 0.9f}(rng);
+                p.angular_velocity = std::uniform_real_distribution<float>{0.0f, 0.5f}(rng);
+            }
+            else {
+                p.velocity.y += dt * A;
+                p.velocity *= exp(-C * dt);
+                p.size *= exp(-B * dt);
+                p.position += p.velocity * dt;
+                p.rotation += p.angular_velocity * dt;
+            }
+        }
+        if(particles.size() < 512) {
+            particles.emplace_back();
+            float lat = std::uniform_real_distribution<float>{0.5f * glm::pi<float>() - floor_angle, 0.5f * glm::pi<float>()}(rng);
+            float lon = std::uniform_real_distribution<float>{0.f, 2.f * glm::pi<float>()}(rng);
+            particles.back().position = glm::vec3(std::cos(lat) * std::cos(lon), std::sin(lat), std::cos(lat) * std::sin(lon)) * 0.97f;
+            particles.back().size = std::uniform_real_distribution<float>{0.01f, 0.03f}(rng);
+            particles.back().velocity.y = -std::uniform_real_distribution<float>{0.0f, 0.1f}(rng);
+            particles.back().angular_velocity = std::uniform_real_distribution<float>{0.0f, 0.5f}(rng);
+        }
 
         glm::mat4 wolf_model(1.f);
         wolf_model = glm::scale(wolf_model, glm::vec3(0.7f));
@@ -496,11 +547,8 @@ int main() try {
         draw_meshes_to_shadow(true);
         glDepthMask(GL_TRUE);
 
-
-
         glBindTexture(GL_TEXTURE_2D, shadow_map);
         glGenerateMipmap(GL_TEXTURE_2D);
-
 
         glEnable(GL_BLEND);
         glBlendEquation(GL_FUNC_ADD);
@@ -583,6 +631,18 @@ int main() try {
         draw_meshes(true);
         glDepthMask(GL_TRUE);
 
+        glm::mat4 snow_model(1.f);
+        glUseProgram(snow_program);
+        glBindBuffer(GL_ARRAY_BUFFER, snow_vbo);
+        glBufferData(GL_ARRAY_BUFFER, particles.size() * sizeof(particle), particles.data(), GL_STATIC_DRAW);
+        glUniformMatrix4fv(____model_location, 1, GL_FALSE, reinterpret_cast<float *>(&snow_model));
+        glUniformMatrix4fv(____view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
+        glUniformMatrix4fv(____projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
+        glUniform3fv(____camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
+        glUniform1i(_texture_location, textures.get_texture(particle_texture_path));
+        glBindVertexArray(snow_vao);
+        glDrawArrays(GL_POINTS, 0, particles.size());
+
         glUseProgram(sphere_program);
         glEnable(GL_BLEND);
         glEnable(GL_DEPTH_TEST);
@@ -595,7 +655,6 @@ int main() try {
         glUniform1i(environment_map_texture_location, textures.get_texture(environment_path));
         glBindVertexArray(sphere_vao);
         glDrawElements(GL_TRIANGLES, sphere_index_count, GL_UNSIGNED_INT, nullptr);
-
 
         glUseProgram(debug_program);
         glUniform1i(__shadow_map_location, 1);

@@ -1,3 +1,4 @@
+#include <iostream>
 #include "texture_holder.hpp"
 
 GLint texture_holder::load_texture(const std::string &path) {

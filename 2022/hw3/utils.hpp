@@ -24,6 +24,7 @@
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/scalar_constants.hpp>
 #include <glm/gtx/string_cast.hpp>
+#include <stdexcept>
 
 struct vertex {
     glm::vec3 position;
@@ -31,12 +32,39 @@ struct vertex {
     glm::vec2 texcoords;
 };
 
+struct particle
+{
+    glm::vec3 position;
+    float size;
+    float rotation;
+    glm::vec3 velocity;
+    float angular_velocity;
+};
+
 typedef std::array<glm::vec3, 8> bounding_box;
 
 std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_sphere(float radius, int quality);
 std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_floor(float radius, int quality, float angle);
 GLuint create_shader(GLenum type, const std::string &file_path);
-GLuint create_program(GLuint vertex_shader, GLuint fragment_shader);
+
+template <typename ... Shaders>
+GLuint create_program(Shaders ... shaders)
+{
+    GLuint result = glCreateProgram();
+    (glAttachShader(result, shaders), ...);
+    glLinkProgram(result);
+    GLint status;
+    glGetProgramiv(result, GL_LINK_STATUS, &status);
+    if (status != GL_TRUE) {
+        GLint info_log_length;
+        glGetProgramiv(result, GL_INFO_LOG_LENGTH, &info_log_length);
+        std::string info_log(info_log_length, '\0');
+        glGetProgramInfoLog(result, info_log.size(), nullptr, info_log.data());
+        throw std::runtime_error("Program linkage failed: " + info_log);
+    }
+    return result;
+}
+
 SDL_Window *create_window(const std::string &window_title);
 SDL_GLContext create_context(SDL_Window *window);
 std::vector<vertex> get_vertices(
