@@ -302,7 +302,7 @@ int main() try {
     float view_azimuth = 0.f;
     float camera_distance = 2.f;
 
-    float f = 0.5f;
+    float f = 1.f, wolf_speed = 0.5f;
 
     bool running = true;
     while (running)
@@ -483,9 +483,9 @@ int main() try {
 
         glm::mat4 wolf_model(1.f);
         wolf_model = glm::scale(wolf_model, glm::vec3(0.7f));
-        wolf_model = glm::rotate(wolf_model, -time, glm::vec3(0.f, 1.f, 0.f));
-        wolf_model = glm::translate(wolf_model, glm::vec3(0.9f, -0.4f, 0.f));
-
+        wolf_model = glm::rotate(wolf_model, -wolf_speed * time, glm::vec3(0.f, 1.f, 0.f));
+        wolf_model = glm::translate(wolf_model, glm::vec3(0.9f, -0.45f, 0.f));
+        wolf_model = glm::rotate(wolf_model, 0.18f, glm::vec3(1.f, 0.f, 0.f));
 
         glUseProgram(wolf_program);
         glUniformMatrix4fv(___model_location, 1, GL_FALSE, reinterpret_cast<float *>(&wolf_model));
