@@ -34,6 +34,8 @@ struct vertex {
 
 typedef std::array<glm::vec3, 8> bounding_box;
 
+std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_sphere(float radius, int quality);
+std::pair<std::vector<vertex>, std::vector<std::uint32_t>> generate_floor(float radius, int quality, float angle);
 GLuint create_shader(GLenum type, const std::string &file_path);
 GLuint create_program(GLuint vertex_shader, GLuint fragment_shader);
 SDL_Window *create_window(const std::string &window_title);
