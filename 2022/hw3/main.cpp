@@ -245,6 +245,9 @@ int main() try {
     GLuint ___light_direction_location = glGetUniformLocation(wolf_program, "light_direction");
     GLuint bones_location = glGetUniformLocation(wolf_program, "bones");
     GLuint albedo_location = glGetUniformLocation(wolf_program, "albedo");
+    GLuint _light_color_location = glGetUniformLocation(wolf_program, "light_color");
+    GLuint ___shadow_map_location = glGetUniformLocation(wolf_program, "shadow_map");
+    GLint __transform_location = glGetUniformLocation(wolf_program, "transform");
 
     const std::string model_path = project_root + "/wolf/Wolf-Blender-2.82a.gltf";
 
@@ -570,10 +573,10 @@ int main() try {
         glUniformMatrix4fv(___view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(___projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(___light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
-
+        glUniform3f(_light_color_location, 0.8f, 0.8f, 0.8f);
+        glUniform1i(___shadow_map_location, 1);
+        glUniformMatrix4fv(__transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform));
         glUniformMatrix4x3fv(bones_location, input_model.bones.size(), GL_FALSE, (float*)bones.data());
-
-
 
         draw_meshes(false);
         glDepthMask(GL_FALSE);
