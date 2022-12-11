@@ -483,7 +483,9 @@ int main() try {
 
         glm::mat4 wolf_model(1.f);
         wolf_model = glm::scale(wolf_model, glm::vec3(0.7f));
-        wolf_model = glm::translate(wolf_model, glm::vec3(-0.9f, -0.4f, 0.f));
+        wolf_model = glm::rotate(wolf_model, -time, glm::vec3(0.f, 1.f, 0.f));
+        wolf_model = glm::translate(wolf_model, glm::vec3(0.9f, -0.4f, 0.f));
+
 
         glUseProgram(wolf_program);
         glUniformMatrix4fv(___model_location, 1, GL_FALSE, reinterpret_cast<float *>(&wolf_model));
@@ -527,8 +529,7 @@ int main() try {
                     glEnable(GL_BLEND);
                 else
                     glDisable(GL_BLEND);
-                if (mesh.material.texture_path){
-                    //glBindTexture(GL_TEXTURE_2D, textures.get_texture(*mesh.material.texture_path));
+                if (mesh.material.texture_path) {
                     glUniform1i(albedo_location, textures.get_texture(wolf_dir + *mesh.material.texture_path));
                     glUniform1i(use_texture_location, 1);
                 }
