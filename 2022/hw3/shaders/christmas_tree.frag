@@ -1,10 +1,9 @@
 #version 330 core
 uniform vec3 ambient;
-
 uniform vec3 light_direction;
 uniform vec3 light_color;
 uniform mat4 transform;
-uniform vec3 ambient_color;
+uniform vec3 albedo_color;
 uniform sampler2D shadow_map;
 uniform sampler2D ambient_texture;
 uniform sampler2D alpha_texture;
@@ -68,7 +67,7 @@ void main() {
     }
 
 
-    vec3 albedo = ambient_color;
+    vec3 albedo = albedo_color;
     if(have_ambient_texture == 1) {
         albedo = vec3(texture(ambient_texture, tex_coord));
     }

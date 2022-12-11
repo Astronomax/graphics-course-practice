@@ -1,5 +1,6 @@
 #version 330 core
 
+uniform vec3 ambient;
 uniform mat4 transform;
 uniform sampler2D albedo;
 uniform sampler2D shadow_map;
@@ -58,7 +59,6 @@ void main() {
         shadow_factor = (shadow_factor - delt) / (1.0 - delt);
     }
 
-    float ambient = 0.4;
     vec3 light = ambient + light_color * diffuse(light_direction) * shadow_factor;
     out_color = vec4(albedo_color.rgb * light, albedo_color.a);
 }

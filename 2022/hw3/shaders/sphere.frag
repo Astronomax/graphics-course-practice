@@ -1,5 +1,6 @@
 #version 330 core
-
+uniform vec3 ambient;
+uniform vec3 light_color;
 uniform vec3 light_direction;
 uniform vec3 camera_position;
 
@@ -18,10 +19,9 @@ void main() {
     vec2 env_map_coord = vec2(atan(reflected_direction.z, reflected_direction.x) / PI * 0.5 + 0.5,
     -atan(reflected_direction.y, length(reflected_direction.xz)) / PI + 0.5);
     vec3 env_color = texture(environment_map_texture, env_map_coord).rgb;
-    float ambient_light = 0.2;
-    float lightness = ambient_light + max(0.0, dot(normal, light_direction));
+    vec3 lightness = ambient + light_color * max(0.0, dot(normal, light_direction));
     float n = 3.5;
     float r0 = pow((1.0 - n) / (1.0 + n), 2.0);
     float r = r0 + (1.0 - r0) * pow(1.0 - dot(normal, direction), 5.0);
-    out_color = vec4(mix(vec3(lightness), env_color, 0.5), r);
+    out_color = vec4(mix(lightness, env_color, 0.5), r);
 }
