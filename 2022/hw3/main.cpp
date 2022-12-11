@@ -54,6 +54,7 @@ int main() try {
     GLuint view_projection_inverse_location = glGetUniformLocation(environment_program, "view_projection_inverse");
     GLuint _camera_position_location = glGetUniformLocation(environment_program, "camera_position");
     GLuint _environment_map_texture_location = glGetUniformLocation(environment_program, "environment_map_texture");
+    GLuint _ambient_location = glGetUniformLocation(environment_program, "ambient");
 
     auto shadow_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/shadow.vert");
     auto shadow_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/shadow.frag");
@@ -73,7 +74,8 @@ int main() try {
     GLint _model_location = glGetUniformLocation(christmas_tree_program, "model");
     GLint _view_location = glGetUniformLocation(christmas_tree_program, "view");
     GLint _projection_location = glGetUniformLocation(christmas_tree_program, "projection");
-    GLint ambient_location = glGetUniformLocation(christmas_tree_program, "ambient_color");
+    GLint ambient_location = glGetUniformLocation(christmas_tree_program, "ambient");
+    GLint _albedo_location = glGetUniformLocation(christmas_tree_program, "albedo_color");
     GLint texture_location = glGetUniformLocation(christmas_tree_program, "ambient_texture");
     GLint shadow_map_location = glGetUniformLocation(christmas_tree_program, "shadow_map");
     GLint transform_location = glGetUniformLocation(christmas_tree_program, "transform");
@@ -160,8 +162,10 @@ int main() try {
     GLuint view_location = glGetUniformLocation(sphere_program, "view");
     GLuint projection_location = glGetUniformLocation(sphere_program, "projection");
     GLuint light_direction_location = glGetUniformLocation(sphere_program, "light_direction");
+    GLuint ___light_color_location = glGetUniformLocation(sphere_program, "light_color");
     GLuint camera_position_location = glGetUniformLocation(sphere_program, "camera_position");
     GLuint environment_map_texture_location = glGetUniformLocation(sphere_program, "environment_map_texture");
+    GLuint ____ambient_location = glGetUniformLocation(sphere_program, "ambient");
 
     GLuint sphere_vao, sphere_vbo, sphere_ebo;
     glGenVertexArrays(1, &sphere_vao);
@@ -200,6 +204,8 @@ int main() try {
     GLuint ___camera_position_location = glGetUniformLocation(floor_program, "camera_position");
     GLuint _transform_location = glGetUniformLocation(floor_program, "transform");
     GLuint _shadow_map_location = glGetUniformLocation(floor_program, "shadow_map");
+    GLuint ___ambient_location = glGetUniformLocation(floor_program, "ambient");
+    GLuint __light_color_location = glGetUniformLocation(floor_program, "light_color");
 
     GLuint floor_vao, floor_vbo, floor_ebo;
     glGenVertexArrays(1, &floor_vao);
@@ -244,6 +250,7 @@ int main() try {
     GLuint _light_color_location = glGetUniformLocation(wolf_program, "light_color");
     GLuint ___shadow_map_location = glGetUniformLocation(wolf_program, "shadow_map");
     GLint __transform_location = glGetUniformLocation(wolf_program, "transform");
+    GLuint __ambient_location = glGetUniformLocation(wolf_program, "ambient");
 
     std::string model_path = project_root + "/wolf/Wolf-Blender-2.82a.gltf";
 
@@ -319,6 +326,9 @@ int main() try {
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(particle), (void*)(16));
 
+    float ambient = 0.2f;
+    //glm::vec3 ambient(0.2f, 0.2f, 0.2f);
+
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
     float time = 0.f;
@@ -378,6 +388,12 @@ int main() try {
             view_elevation += 2.f * dt;
         if (button_down[SDLK_s])
             view_elevation -= 2.f * dt;
+        if (button_down[SDLK_q])
+            ambient = std::min(1.f, ambient + 2.f * dt);
+        if (button_down[SDLK_a])
+            ambient = std::max(0.f, ambient - 2.f * dt);
+
+        glm::vec3 ambient_color(ambient);
 
         float near = 0.1f;
         float far = 100.f;
@@ -564,6 +580,7 @@ int main() try {
         glUniformMatrix4fv(view_projection_inverse_location, 1, GL_FALSE, reinterpret_cast<float *>(&view_projection_inverse));
         glUniform3fv(_camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
         glUniform1i(_environment_map_texture_location, textures.get_texture(environment_path));
+        glUniform3fv(_ambient_location, 1, reinterpret_cast<float *>(&ambient_color));
         glBindVertexArray(environment_vao);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         glEnable(GL_DEPTH_TEST);
@@ -576,7 +593,7 @@ int main() try {
         glUniformMatrix4fv(_view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniformMatrix4fv(transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform));
-        glUniform3f(ambient_location, 0.2f, 0.2f, 0.2f);
+        glUniform3fv(ambient_location, 1, reinterpret_cast<float *>(&ambient_color));
         glUniform3fv(_light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
         glUniform3f(light_color_location, 0.8f, 0.8f, 0.8f);
         glUniform3fv(__camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
@@ -587,7 +604,7 @@ int main() try {
             auto material = materials[shape.mesh.material_ids[0]];
             std::string texture_path = christmas_tree_dir + material.ambient_texname;
             std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
-            glUniform3fv(ambient_location, 1, material.ambient);
+            glUniform3fv(_albedo_location, 1, material.ambient);
             glUniform1f(power_location, material.shininess);
             glUniform1f(glossiness_location, material.specular[0]);
             glUniform1i(texture_location, textures.get_texture(texture_path));
@@ -613,6 +630,9 @@ int main() try {
         glUniform3fv(___camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
         glUniform1i(_shadow_map_location, 1);
         glUniformMatrix4fv(_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform));
+        glUniform3fv(___ambient_location, 1, reinterpret_cast<float *>(&ambient_color));
+        glUniform3f(__light_color_location, 0.8f, 0.8f, 0.8f);
+
         glBindVertexArray(floor_vao);
         glDrawElements(GL_TRIANGLES, floor_index_count, GL_UNSIGNED_INT, nullptr);
 
@@ -623,6 +643,7 @@ int main() try {
         glUniform3fv(___light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
         glUniform3f(_light_color_location, 0.8f, 0.8f, 0.8f);
         glUniform1i(___shadow_map_location, 1);
+        glUniform3fv(__ambient_location, 1, reinterpret_cast<float *>(&ambient_color));
         glUniformMatrix4fv(__transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform));
         glUniformMatrix4x3fv(bones_location, input_model.bones.size(), GL_FALSE, (float*)bones.data());
 
@@ -653,6 +674,8 @@ int main() try {
         glUniform3fv(light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
         glUniform3fv(camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
         glUniform1i(environment_map_texture_location, textures.get_texture(environment_path));
+        glUniform3f(___light_color_location, 0.8f, 0.8f, 0.8f);
+        glUniform3fv(____ambient_location, 1, reinterpret_cast<float *>(&ambient_color));
         glBindVertexArray(sphere_vao);
         glDrawElements(GL_TRIANGLES, sphere_index_count, GL_UNSIGNED_INT, nullptr);
 

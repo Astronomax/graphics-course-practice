@@ -1,9 +1,11 @@
 #version 330 core
 
+uniform vec3 ambient;
 uniform vec3 light_direction;
 uniform vec3 camera_position;
 uniform sampler2D shadow_map;
 uniform mat4 transform;
+uniform vec3 light_color;
 
 in vec3 position;
 in vec3 normal;
@@ -11,6 +13,10 @@ in vec3 normal;
 layout (location = 0) out vec4 out_color;
 
 const float PI = acos(-1);
+
+float diffuse(vec3 direction) {
+    return max(0.0, dot(normal, direction));
+}
 
 void main() {
     vec4 shadow_pos = transform * vec4(position, 1.0);
@@ -46,7 +52,6 @@ void main() {
     }
 
     vec3 direction = normalize(camera_position - position);
-    float ambient_light = 0.2;
-    float lightness = ambient_light + max(0.0, dot(normal, light_direction)) * shadow_factor;
-    out_color = vec4(vec3(lightness), 1.0);
+    vec3 light = ambient + light_color * diffuse(light_direction) * shadow_factor;
+    out_color = vec4(vec3(light), 1.0);
 }
