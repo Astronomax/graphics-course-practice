@@ -62,6 +62,8 @@ int main() try {
     GLint shadow_transform_location = glGetUniformLocation(shadow_program, "transform");
     GLint alpha_texture_location = glGetUniformLocation(shadow_program, "alpha_texture");
     GLint have_alpha_location = glGetUniformLocation(shadow_program, "have_alpha");
+    GLint use_bones_location = glGetUniformLocation(shadow_program, "use_bones");
+    GLuint _bones_location = glGetUniformLocation(shadow_program, "bones");
 
     auto christmas_tree_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/christmas_tree.vert");
     auto christmas_tree_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/christmas_tree.frag");
@@ -120,12 +122,12 @@ int main() try {
     glBufferData(GL_ARRAY_BUFFER, christmas_vertices.size() * sizeof(vertex), christmas_vertices.data(), GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, position));
+    //glEnableVertexAttribArray(1);
+    //glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, tangent));
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, tangent));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
-    glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
 
     GLsizei shadow_map_resolution = 1024;
     GLuint shadow_map, render_buffer, shadow_fbo;
@@ -179,12 +181,12 @@ int main() try {
     }
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, position));
+    //glEnableVertexAttribArray(1);
+    //glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, tangent));
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, tangent));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
-    glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
 
     float floor_angle = 0.4f * glm::pi<float>();
 
@@ -217,12 +219,12 @@ int main() try {
     }
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, position));
+    //glEnableVertexAttribArray(1);
+    //glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, tangent));
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, tangent));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
-    glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
 
     auto debug_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/debug.vert");
     auto debug_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/debug.frag");
@@ -387,6 +389,77 @@ int main() try {
             {c.x, c.y, c.z, 1.f}
         }));
 
+        glm::mat4 wolf_model(1.f);
+        wolf_model = glm::scale(wolf_model, glm::vec3(0.7f));
+        wolf_model = glm::rotate(wolf_model, -wolf_speed * time, glm::vec3(0.f, 1.f, 0.f));
+        wolf_model = glm::translate(wolf_model, glm::vec3(0.9f, -0.45f, 0.f));
+        wolf_model = glm::rotate(wolf_model, 0.18f, glm::vec3(1.f, 0.f, 0.f));
+
+        std::vector<glm::mat4x3> bones(input_model.bones.size(), glm::mat4x3(0.0));
+        float t1 = std::fmod(time, animation1.max_time);
+        float t2 = std::fmod(time, animation2.max_time);
+        for(int i = 0; i < bones.size(); ++i) {
+            glm::mat4 translation = glm::translate(glm::mat4(1.f),
+                                                   glm::lerp(animation1.bones[i].translation(t1),
+                                                             animation2.bones[i].translation(t2), f));
+            glm::mat4 scale = glm::scale(glm::mat4(1.f),
+                                         glm::lerp(animation1.bones[i].scale(t1),
+                                                   animation2.bones[i].scale(t2), f));
+            glm::mat4 rotation = glm::toMat4(glm::slerp(animation1.bones[i].rotation(t1),
+                                                        animation2.bones[i].rotation(t2), f));
+
+            glm::mat4 _transform = translation * rotation * scale;
+            if(input_model.bones[i].parent != -1)
+                _transform = bones[input_model.bones[i].parent] * _transform;
+            bones[i] = _transform;
+        }
+
+        for(int i = 0; i < bones.size(); ++i)
+            bones[i] = bones[i] * input_model.bones[i].inverse_bind_matrix;
+
+        auto draw_meshes_to_shadow = [&](bool transparent) {
+            for (auto const & mesh : meshes) {
+                if (mesh.material.transparent != transparent)
+                    continue;
+                if (mesh.material.two_sided)
+                    glDisable(GL_CULL_FACE);
+                else
+                    glEnable(GL_CULL_FACE);
+                if (transparent)
+                    glEnable(GL_BLEND);
+                else
+                    glDisable(GL_BLEND);
+                glBindVertexArray(mesh.vao);
+                glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset));
+            }
+        };
+
+        auto draw_meshes = [&](bool transparent) {
+            for (auto const & mesh : meshes) {
+                if (mesh.material.transparent != transparent)
+                    continue;
+                if (mesh.material.two_sided)
+                    glDisable(GL_CULL_FACE);
+                else
+                    glEnable(GL_CULL_FACE);
+                if (transparent)
+                    glEnable(GL_BLEND);
+                else
+                    glDisable(GL_BLEND);
+                if (mesh.material.texture_path) {
+                    glUniform1i(albedo_location, textures.get_texture(wolf_dir + *mesh.material.texture_path));
+                    glUniform1i(use_texture_location, 1);
+                }
+                else if (mesh.material.color) {
+                    glUniform1i(use_texture_location, 0);
+                    glUniform4fv(color_location, 1, reinterpret_cast<const float *>(&(*mesh.material.color)));
+                }
+                else continue;
+                glBindVertexArray(mesh.vao);
+                glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset));
+            }
+        };
+
         glDisable(GL_BLEND);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
         glClearColor(1.f, 1.f, 0.f, 0.f);
@@ -399,6 +472,7 @@ int main() try {
         glUseProgram(shadow_program);
         glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&christmas_tree_model));
         glUniformMatrix4fv(shadow_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform));
+        glUniform1i(use_bones_location, 0);
         glBindVertexArray(vao);
         GLint current_block = 0;
         for(auto &shape : shapes) {
@@ -410,6 +484,16 @@ int main() try {
             glDrawArrays(GL_TRIANGLES, current_block, (GLint)shape.mesh.indices.size());
             current_block += (GLint)shape.mesh.indices.size();
         }
+
+        glUniform1i(use_bones_location, 1);
+        glUniformMatrix4x3fv(_bones_location, input_model.bones.size(), GL_FALSE, (float*)bones.data());
+        glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&wolf_model));
+        draw_meshes_to_shadow(false);
+        glDepthMask(GL_FALSE);
+        draw_meshes_to_shadow(true);
+        glDepthMask(GL_TRUE);
+
+
 
         glBindTexture(GL_TEXTURE_2D, shadow_map);
         glGenerateMipmap(GL_TEXTURE_2D);
@@ -481,67 +565,15 @@ int main() try {
         glBindVertexArray(floor_vao);
         glDrawElements(GL_TRIANGLES, floor_index_count, GL_UNSIGNED_INT, nullptr);
 
-        glm::mat4 wolf_model(1.f);
-        wolf_model = glm::scale(wolf_model, glm::vec3(0.7f));
-        wolf_model = glm::rotate(wolf_model, -wolf_speed * time, glm::vec3(0.f, 1.f, 0.f));
-        wolf_model = glm::translate(wolf_model, glm::vec3(0.9f, -0.45f, 0.f));
-        wolf_model = glm::rotate(wolf_model, 0.18f, glm::vec3(1.f, 0.f, 0.f));
-
         glUseProgram(wolf_program);
         glUniformMatrix4fv(___model_location, 1, GL_FALSE, reinterpret_cast<float *>(&wolf_model));
         glUniformMatrix4fv(___view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(___projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(___light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
 
-        std::vector<glm::mat4x3> bones(input_model.bones.size(), glm::mat4x3(0.0));
-        float t1 = std::fmod(time, animation1.max_time);
-        float t2 = std::fmod(time, animation2.max_time);
-        for(int i = 0; i < bones.size(); ++i) {
-            glm::mat4 translation = glm::translate(glm::mat4(1.f),
-                                                   glm::lerp(animation1.bones[i].translation(t1),
-                                                             animation2.bones[i].translation(t2), f));
-            glm::mat4 scale = glm::scale(glm::mat4(1.f),
-                                         glm::lerp(animation1.bones[i].scale(t1),
-                                                   animation2.bones[i].scale(t2), f));
-            glm::mat4 rotation = glm::toMat4(glm::slerp(animation1.bones[i].rotation(t1),
-                                                        animation2.bones[i].rotation(t2), f));
-
-            glm::mat4 _transform = translation * rotation * scale;
-            if(input_model.bones[i].parent != -1)
-                _transform = bones[input_model.bones[i].parent] * _transform;
-            bones[i] = _transform;
-        }
-
-        for(int i = 0; i < bones.size(); ++i)
-            bones[i] = bones[i] * input_model.bones[i].inverse_bind_matrix;
-
         glUniformMatrix4x3fv(bones_location, input_model.bones.size(), GL_FALSE, (float*)bones.data());
 
-        auto draw_meshes = [&](bool transparent) {
-            for (auto const & mesh : meshes) {
-                if (mesh.material.transparent != transparent)
-                    continue;
-                if (mesh.material.two_sided)
-                    glDisable(GL_CULL_FACE);
-                else
-                    glEnable(GL_CULL_FACE);
-                if (transparent)
-                    glEnable(GL_BLEND);
-                else
-                    glDisable(GL_BLEND);
-                if (mesh.material.texture_path) {
-                    glUniform1i(albedo_location, textures.get_texture(wolf_dir + *mesh.material.texture_path));
-                    glUniform1i(use_texture_location, 1);
-                }
-                else if (mesh.material.color) {
-                    glUniform1i(use_texture_location, 0);
-                    glUniform4fv(color_location, 1, reinterpret_cast<const float *>(&(*mesh.material.color)));
-                }
-                else continue;
-                glBindVertexArray(mesh.vao);
-                glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset));
-            }
-        };
+
 
         draw_meshes(false);
         glDepthMask(GL_FALSE);
