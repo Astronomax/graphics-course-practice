@@ -6,7 +6,6 @@ uniform sampler2D shadow_map;
 uniform mat4 transform;
 
 in vec3 position;
-in vec3 tangent;
 in vec3 normal;
 
 layout (location = 0) out vec4 out_color;

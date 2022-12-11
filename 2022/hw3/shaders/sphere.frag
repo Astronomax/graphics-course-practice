@@ -6,7 +6,6 @@ uniform vec3 camera_position;
 uniform sampler2D environment_map_texture;
 
 in vec3 position;
-in vec3 tangent;
 in vec3 normal;
 
 layout (location = 0) out vec4 out_color;

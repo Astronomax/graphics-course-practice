@@ -82,10 +82,9 @@ int main() try {
     GLint _have_alpha_location = glGetUniformLocation(christmas_tree_program, "have_alpha");
     GLint have_ambient_texture_location = glGetUniformLocation(christmas_tree_program, "have_ambient_texture");
 
+
     std::string scene_dir = project_root + "/christmas_tree/";
-    //std::string scene_dir = project_root + "/bunny/";
     std::string obj_path = scene_dir + "12150_Christmas_Tree_V2_L2.obj";
-    //std::string obj_path = scene_dir + "bunny.obj";
     std::string environment_path = project_root + "/textures/winter_in_forest.jpg";
 
     tinyobj::attrib_t attrib;
@@ -178,7 +177,7 @@ int main() try {
     glEnableVertexAttribArray(3);
     glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
 
-    float floor_angle = 0.4f * acos(-1);
+    float floor_angle = 0.4f * glm::pi<float>();
 
     auto floor_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/floor.vert");
     auto floor_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/floor.frag");
@@ -215,6 +214,17 @@ int main() try {
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));
     glEnableVertexAttribArray(3);
     glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
+
+    auto debug_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/debug.vert");
+    auto debug_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/debug.frag");
+    auto debug_program = create_program(debug_vertex_shader, debug_fragment_shader);
+    GLuint __shadow_map_location = glGetUniformLocation(debug_program, "shadow_map");
+    GLuint debug_vao;
+    glGenVertexArrays(1, &debug_vao);
+
+
+
+
 
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
@@ -275,15 +285,11 @@ int main() try {
         if (button_down[SDLK_s])
             view_elevation -= 2.f * dt;
 
-        glEnable(GL_BLEND);
-        glBlendEquation(GL_FUNC_ADD);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
         float near = 0.1f;
         float far = 100.f;
 
         glm::mat4 christmas_tree_model = glm::rotate(glm::mat4(1.f), -0.5f * glm::pi<float>(), {1.f, 0.f, 0.f});
-        christmas_tree_model = glm::scale(christmas_tree_model, glm::vec3(0.007f));
+        //christmas_tree_model = glm::scale(christmas_tree_model, glm::vec3(0.007f));
         christmas_tree_model = glm::translate(christmas_tree_model, glm::vec3(0.f, 0.f, -44.f));
         glm::mat4 view(1.f);
         view = glm::translate(view, {0.f, 0.f, -camera_distance});
@@ -317,6 +323,7 @@ int main() try {
             {c.x, c.y, c.z, 1.f}
         }));
 
+        glDisable(GL_BLEND);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
         glClearColor(1.f, 1.f, 0.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -343,9 +350,16 @@ int main() try {
         glBindTexture(GL_TEXTURE_2D, shadow_map);
         glGenerateMipmap(GL_TEXTURE_2D);
 
+
+        glEnable(GL_BLEND);
+        glBlendEquation(GL_FUNC_ADD);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glClearColor(0.8f, 0.8f, 1.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glViewport(0, 0, width, height);
+
         glUseProgram(environment_program);
         glDisable(GL_DEPTH_TEST);
         glUniformMatrix4fv(view_projection_inverse_location, 1, GL_FALSE, reinterpret_cast<float *>(&view_projection_inverse));
@@ -414,6 +428,12 @@ int main() try {
         glUniform1i(environment_map_texture_location, textures.get_texture(environment_path));
         glBindVertexArray(sphere_vao);
         glDrawElements(GL_TRIANGLES, sphere_index_count, GL_UNSIGNED_INT, nullptr);
+
+
+        glUseProgram(debug_program);
+        glUniform1i(__shadow_map_location, 1);
+        glBindVertexArray(debug_vao);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
 
         SDL_GL_SwapWindow(window);
     }
