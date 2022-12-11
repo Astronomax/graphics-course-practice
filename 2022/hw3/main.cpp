@@ -31,6 +31,7 @@
 #include <glm/gtx/string_cast.hpp>
 #include <numeric>
 
+#include "gltf_loader.hpp"
 #include "texture_holder.hpp"
 #include <fstream>
 #include "utils.hpp"
@@ -83,20 +84,21 @@ int main() try {
     GLint have_ambient_texture_location = glGetUniformLocation(christmas_tree_program, "have_ambient_texture");
 
 
-    std::string scene_dir = project_root + "/christmas_tree/";
-    std::string obj_path = scene_dir + "12150_Christmas_Tree_V2_L2.obj";
+    std::string christmas_tree_dir = project_root + "/christmas_tree/";
+    std::string christmas_tree_path = christmas_tree_dir + "12150_Christmas_Tree_V2_L2.obj";
     std::string environment_path = project_root + "/textures/winter_in_forest.jpg";
+    std::string wolf_dir = project_root + "/wolf/";
 
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
-    tinyobj::LoadObj(&attrib, &shapes, &materials, nullptr, obj_path.c_str(), scene_dir.c_str());
+    tinyobj::LoadObj(&attrib, &shapes, &materials, nullptr, christmas_tree_path.c_str(), christmas_tree_dir.c_str());
 
     texture_holder textures(3);
     textures.load_texture(environment_path);
 
     for(auto &material : materials) {
-        std::string texture_path = scene_dir + material.ambient_texname;
+        std::string texture_path = christmas_tree_dir + material.ambient_texname;
         std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
         textures.load_texture(texture_path);
     }
@@ -229,6 +231,66 @@ int main() try {
     GLuint debug_vao;
     glGenVertexArrays(1, &debug_vao);
 
+    auto wolf_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/wolf.vert");
+    auto wolf_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/wolf.frag");
+    auto wolf_program = create_program(wolf_vertex_shader, wolf_fragment_shader);
+
+    GLuint ___model_location = glGetUniformLocation(wolf_program, "model");
+    GLuint ___view_location = glGetUniformLocation(wolf_program, "view");
+    GLuint ___projection_location = glGetUniformLocation(wolf_program, "projection");
+    GLuint color_location = glGetUniformLocation(wolf_program, "color");
+    GLuint use_texture_location = glGetUniformLocation(wolf_program, "use_texture");
+    GLuint ___light_direction_location = glGetUniformLocation(wolf_program, "light_direction");
+    GLuint bones_location = glGetUniformLocation(wolf_program, "bones");
+    GLuint albedo_location = glGetUniformLocation(wolf_program, "albedo");
+
+    const std::string model_path = project_root + "/wolf/Wolf-Blender-2.82a.gltf";
+
+    auto const input_model = load_gltf(model_path);
+    GLuint wolf_vbo;
+    glGenBuffers(1, &wolf_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, wolf_vbo);
+    glBufferData(GL_ARRAY_BUFFER, input_model.buffer.size(), input_model.buffer.data(), GL_STATIC_DRAW);
+
+    const gltf_model::animation& animation1 = input_model.animations.at("01_Run");
+    const gltf_model::animation& animation2 = input_model.animations.at("02_walk");
+
+    struct mesh {
+        GLuint vao;
+        gltf_model::accessor indices;
+        gltf_model::material material;
+    };
+
+    auto setup_attribute = [](int index, gltf_model::accessor const & accessor, bool integer = false) {
+        glEnableVertexAttribArray(index);
+        if (integer)
+            glVertexAttribIPointer(index, accessor.size, accessor.type, 0, reinterpret_cast<void *>(accessor.view.offset));
+        else
+            glVertexAttribPointer(index, accessor.size, accessor.type, GL_FALSE, 0, reinterpret_cast<void *>(accessor.view.offset));
+    };
+
+    std::vector<mesh> meshes;
+    for (auto const &mesh : input_model.meshes) {
+        auto& result = meshes.emplace_back();
+        glGenVertexArrays(1, &result.vao);
+        glBindVertexArray(result.vao);
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, wolf_vbo);
+        result.indices = mesh.indices;
+
+        setup_attribute(0, mesh.position);
+        setup_attribute(1, mesh.normal);
+        setup_attribute(2, mesh.texcoord);
+        setup_attribute(3, mesh.joints, true);
+        setup_attribute(4, mesh.weights);
+
+        result.material = mesh.material;
+    }
+
+    for (auto const &mesh : meshes) {
+        if (!mesh.material.texture_path) continue;
+        textures.load_texture(wolf_dir + *mesh.material.texture_path);
+    }
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
@@ -239,6 +301,8 @@ int main() try {
     float view_elevation = glm::radians(20.f);
     float view_azimuth = 0.f;
     float camera_distance = 2.f;
+
+    float f = 0.5f;
 
     bool running = true;
     while (running)
@@ -339,7 +403,7 @@ int main() try {
         GLint current_block = 0;
         for(auto &shape : shapes) {
             auto material = materials[shape.mesh.material_ids[0]];
-            std::string texture_path = scene_dir + material.alpha_texname;
+            std::string texture_path = christmas_tree_dir + material.alpha_texname;
             std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
             glUniform1i(have_alpha_location, !material.alpha_texname.empty());
             glUniform1i(alpha_texture_location, textures.get_texture(texture_path));
@@ -386,14 +450,14 @@ int main() try {
         current_block = 0;
         for(auto &shape : shapes) {
             auto material = materials[shape.mesh.material_ids[0]];
-            std::string texture_path = scene_dir + material.ambient_texname;
+            std::string texture_path = christmas_tree_dir + material.ambient_texname;
             std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
             glUniform3fv(ambient_location, 1, material.ambient);
             glUniform1f(power_location, material.shininess);
             glUniform1f(glossiness_location, material.specular[0]);
             glUniform1i(texture_location, textures.get_texture(texture_path));
             material = materials[shape.mesh.material_ids[0]];
-            texture_path = scene_dir + material.alpha_texname;
+            texture_path = christmas_tree_dir + material.alpha_texname;
             std::replace(texture_path.begin(), texture_path.end(), '\\', '/');
             glUniform1i(have_ambient_texture_location, !material.ambient_texname.empty());
             glUniform1i(_have_alpha_location, !material.alpha_texname.empty());
@@ -417,7 +481,74 @@ int main() try {
         glBindVertexArray(floor_vao);
         glDrawElements(GL_TRIANGLES, floor_index_count, GL_UNSIGNED_INT, nullptr);
 
+        glm::mat4 wolf_model(1.f);
+        wolf_model = glm::scale(wolf_model, glm::vec3(0.7f));
+        wolf_model = glm::translate(wolf_model, glm::vec3(-0.9f, -0.4f, 0.f));
+
+        glUseProgram(wolf_program);
+        glUniformMatrix4fv(___model_location, 1, GL_FALSE, reinterpret_cast<float *>(&wolf_model));
+        glUniformMatrix4fv(___view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
+        glUniformMatrix4fv(___projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
+        glUniform3fv(___light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
+
+        std::vector<glm::mat4x3> bones(input_model.bones.size(), glm::mat4x3(0.0));
+        float t1 = std::fmod(time, animation1.max_time);
+        float t2 = std::fmod(time, animation2.max_time);
+        for(int i = 0; i < bones.size(); ++i) {
+            glm::mat4 translation = glm::translate(glm::mat4(1.f),
+                                                   glm::lerp(animation1.bones[i].translation(t1),
+                                                             animation2.bones[i].translation(t2), f));
+            glm::mat4 scale = glm::scale(glm::mat4(1.f),
+                                         glm::lerp(animation1.bones[i].scale(t1),
+                                                   animation2.bones[i].scale(t2), f));
+            glm::mat4 rotation = glm::toMat4(glm::slerp(animation1.bones[i].rotation(t1),
+                                                        animation2.bones[i].rotation(t2), f));
+
+            glm::mat4 _transform = translation * rotation * scale;
+            if(input_model.bones[i].parent != -1)
+                _transform = bones[input_model.bones[i].parent] * _transform;
+            bones[i] = _transform;
+        }
+
+        for(int i = 0; i < bones.size(); ++i)
+            bones[i] = bones[i] * input_model.bones[i].inverse_bind_matrix;
+
+        glUniformMatrix4x3fv(bones_location, input_model.bones.size(), GL_FALSE, (float*)bones.data());
+
+        auto draw_meshes = [&](bool transparent) {
+            for (auto const & mesh : meshes) {
+                if (mesh.material.transparent != transparent)
+                    continue;
+                if (mesh.material.two_sided)
+                    glDisable(GL_CULL_FACE);
+                else
+                    glEnable(GL_CULL_FACE);
+                if (transparent)
+                    glEnable(GL_BLEND);
+                else
+                    glDisable(GL_BLEND);
+                if (mesh.material.texture_path){
+                    //glBindTexture(GL_TEXTURE_2D, textures.get_texture(*mesh.material.texture_path));
+                    glUniform1i(albedo_location, textures.get_texture(wolf_dir + *mesh.material.texture_path));
+                    glUniform1i(use_texture_location, 1);
+                }
+                else if (mesh.material.color) {
+                    glUniform1i(use_texture_location, 0);
+                    glUniform4fv(color_location, 1, reinterpret_cast<const float *>(&(*mesh.material.color)));
+                }
+                else continue;
+                glBindVertexArray(mesh.vao);
+                glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset));
+            }
+        };
+
+        draw_meshes(false);
+        glDepthMask(GL_FALSE);
+        draw_meshes(true);
+        glDepthMask(GL_TRUE);
+
         glUseProgram(sphere_program);
+        glEnable(GL_BLEND);
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
         glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&sphere_model));

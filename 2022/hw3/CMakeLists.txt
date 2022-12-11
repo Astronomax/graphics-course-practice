@@ -29,8 +29,10 @@ add_executable(${TARGET_NAME} main.cpp
 		texture_holder.hpp texture_holder.cpp
 		obj_parser.hpp obj_parser.cpp
 		stb_image.h stb_image.c
-		utils.hpp utils.cpp)
+		utils.hpp utils.cpp
+		gltf_loader.hpp gltf_loader.cpp)
 target_include_directories(${TARGET_NAME} PUBLIC
+	"${CMAKE_CURRENT_LIST_DIR}/rapidjson/include"
 	"${SDL2_INCLUDE_DIRS}"
 	"${GLEW_INCLUDE_DIRS}"
 	"${OPENGL_INCLUDE_DIRS}"
