@@ -101,8 +101,16 @@ int main() try {
         textures.load_texture(texture_path);
     }
 
+    glm::mat4 christmas_tree_model = glm::mat4(1.f);
+    christmas_tree_model = glm::rotate(christmas_tree_model, -0.5f * glm::pi<float>(), {1.f, 0.f, 0.f});
+    christmas_tree_model = glm::scale(christmas_tree_model, glm::vec3(0.007f));
+    christmas_tree_model = glm::translate(christmas_tree_model, glm::vec3(0.f, 0.f, -44.f));
+
     auto christmas_vertices = get_vertices(attrib, shapes);
-    auto bounding_box = get_bounding_box(christmas_vertices);
+    auto shadow_scene = christmas_vertices;
+    for(auto &i : shadow_scene)
+        i.position = christmas_tree_model * glm::vec4(i.position, 1.0);
+    auto bounding_box = get_bounding_box(shadow_scene);
     glm::vec3 c = std::accumulate(bounding_box.begin(), bounding_box.end(), glm::vec3(0.f)) / 8.f;
 
     GLuint vao, vbo;
@@ -288,9 +296,6 @@ int main() try {
         float near = 0.1f;
         float far = 100.f;
 
-        glm::mat4 christmas_tree_model = glm::rotate(glm::mat4(1.f), -0.5f * glm::pi<float>(), {1.f, 0.f, 0.f});
-        //christmas_tree_model = glm::scale(christmas_tree_model, glm::vec3(0.007f));
-        christmas_tree_model = glm::translate(christmas_tree_model, glm::vec3(0.f, 0.f, -44.f));
         glm::mat4 view(1.f);
         view = glm::translate(view, {0.f, 0.f, -camera_distance});
         view = glm::rotate(view, view_elevation, {1.f, 0.f, 0.f});
@@ -306,15 +311,15 @@ int main() try {
 
         glm::vec3 light_z = -light_direction;
         glm::vec3 light_x = glm::normalize(glm::cross(light_z, {0.f, 1.f, 0.f}));
-        glm::vec3 light_y = glm::cross(light_x, light_z);
+        glm::vec3 light_y = glm::normalize(glm::cross(light_x, light_z));
         float dx = -std::numeric_limits<float>::infinity();
         float dy = -std::numeric_limits<float>::infinity();
         float dz = -std::numeric_limits<float>::infinity();
         for(auto _v : bounding_box) {
             glm::vec3 v = _v - c;
-            dx = std::max(dx, glm::dot(v, light_x));
-            dy = std::max(dy, glm::dot(v, light_y));
-            dz = std::max(dz, glm::dot(v, light_z));
+            dx = std::max(dx, abs(glm::dot(v, light_x)));
+            dy = std::max(dy, abs(glm::dot(v, light_y)));
+            dz = std::max(dz, abs(glm::dot(v, light_z)));
         }
         glm::mat4 transform = glm::inverse(glm::mat4({
             {dx * light_x.x, dx * light_x.y, dx * light_x.z, 0.f},
