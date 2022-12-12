@@ -9,4 +9,7 @@ in vec2 texcoord;
 void main() {
     float p = texture(_texture, texcoord).r;
     out_color = vec4(1.f, 1.f, 1.f, p);
+    if(p < 0.5) {
+        discard;
+    }
 }
