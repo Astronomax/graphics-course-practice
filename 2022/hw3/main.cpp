@@ -93,6 +93,7 @@ int main() try {
     std::string environment_path = project_root + "/textures/winter_in_forest.jpg";
     std::string wolf_dir = project_root + "/wolf/";
     std::string particle_texture_path = project_root + "/particles/particle.png";
+    std::string cloud_texture_path = project_root + "/cloud.data";
 
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
@@ -102,6 +103,7 @@ int main() try {
     texture_holder textures(3);
     textures.load_texture(environment_path);
     textures.load_texture(particle_texture_path);
+    textures.load_texture(cloud_texture_path);
 
     for(auto &material : materials) {
         std::string texture_path = christmas_tree_dir + material.ambient_texname;
@@ -326,8 +328,40 @@ int main() try {
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(particle), (void*)(16));
 
+
+
+
+    auto smog_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/smog.vert");
+    auto smog_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/smog.frag");
+    auto smog_program = create_program(smog_vertex_shader, smog_fragment_shader);
+
+    GLuint _____view_location = glGetUniformLocation(smog_program, "view");
+    GLuint _____projection_location = glGetUniformLocation(smog_program, "projection");
+    GLuint center_location = glGetUniformLocation(smog_program, "center");
+    GLuint r_location = glGetUniformLocation(smog_program, "r");
+    GLuint _____camera_position_location = glGetUniformLocation(smog_program, "camera_position");
+    GLuint ____light_direction_location = glGetUniformLocation(smog_program, "light_direction");
+
+    /*
+    GLuint smog_vao, smog_vbo, smog_ebo;
+    glGenVertexArrays(1, &smog_vao);
+    glBindVertexArray(smog_vao);
+
+    glGenBuffers(1, &smog_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, smog_vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(cube_vertices), cube_vertices, GL_STATIC_DRAW);
+
+    glGenBuffers(1, &smog_ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, smog_ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(cube_indices), cube_indices, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+    */
+
+
+
     float ambient = 0.2f;
-    //glm::vec3 ambient(0.2f, 0.2f, 0.2f);
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
@@ -664,6 +698,30 @@ int main() try {
         glBindVertexArray(snow_vao);
         glDrawArrays(GL_POINTS, 0, particles.size());
 
+
+
+
+
+        glCullFace(GL_FRONT);
+        glUseProgram(smog_program);
+        glEnable(GL_BLEND);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_CULL_FACE);
+        glUniformMatrix4fv(_____view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
+        glUniformMatrix4fv(_____projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
+        glUniform3f(center_location, 0.f, 0.f, 0.f);
+        glUniform1f(r_location, 0.97f);
+        glUniform3fv(_____camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
+        glUniform3fv(____light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
+
+        glBindVertexArray(sphere_vao);
+        glDrawElements(GL_TRIANGLES, sphere_index_count, GL_UNSIGNED_INT, nullptr);
+
+
+
+
+
+        glCullFace(GL_BACK);
         glUseProgram(sphere_program);
         glEnable(GL_BLEND);
         glEnable(GL_DEPTH_TEST);
