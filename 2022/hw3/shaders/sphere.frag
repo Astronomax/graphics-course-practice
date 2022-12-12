@@ -23,5 +23,5 @@ void main() {
     float n = 3.5;
     float r0 = pow((1.0 - n) / (1.0 + n), 2.0);
     float r = r0 + (1.0 - r0) * pow(1.0 - dot(normal, direction), 5.0);
-    out_color = vec4(mix(lightness, env_color, 0.5), r);
+    out_color = vec4(lightness *  env_color, r);
 }
