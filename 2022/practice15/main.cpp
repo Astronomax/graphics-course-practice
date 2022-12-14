@@ -48,20 +48,43 @@ R"(#version 330 core
 
 uniform mat4 transform;
 
-void main()
-{
-    gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
+layout (location = 0) in vec2 in_position;
+layout (location = 1) in vec2 in_texcoord;
+
+out vec2 texcoord;
+
+void main() {
+    //position = in_position;
+    gl_Position = transform * vec4(in_position, 0.0, 1.0);
+    texcoord = in_texcoord;
 }
 )";
 
 const char msdf_fragment_shader_source[] =
 R"(#version 330 core
+uniform float sdf_scale;
+uniform sampler2D sdf_texture;
 
 layout (location = 0) out vec4 out_color;
 
-void main()
-{
-    out_color = vec4(0.0);
+in vec2 texcoord;
+
+float median(vec3 v) {
+    return max(min(v.r, v.g), min(max(v.r, v.g), v.b));
+}
+
+void main() {
+    float sdf_texture_value = median(texture(sdf_texture, texcoord).rgb);
+    float sdf_value = sdf_scale * (sdf_texture_value - 0.5);
+    float value = length(vec2(dFdx(sdf_value), dFdy(sdf_value))) / sqrt(2.0);
+    float alpha = smoothstep(-value, value, sdf_value);
+    float stroke_sdf_value = sdf_value + 1.0;
+    float stroke_value = length(vec2(dFdx(stroke_sdf_value), dFdy(stroke_sdf_value))) / sqrt(2.0);
+    float stroke_alpha = smoothstep(-stroke_value, stroke_value, stroke_sdf_value);
+    if(alpha < 0.1)
+    out_color = vec4(1.0, 1.0, 1.0, stroke_alpha);
+    else
+    out_color = vec4(0.0, 0.0, 0.0, stroke_alpha);
 }
 )";
 
@@ -104,6 +127,11 @@ GLuint create_program(Shaders ... shaders)
     return result;
 }
 
+struct vertex {
+    glm::vec2 position;
+    glm::vec2 texcoord;
+};
+
 int main() try
 {
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -145,7 +173,8 @@ int main() try
     auto msdf_program = create_program(msdf_vertex_shader, msdf_fragment_shader);
 
     GLuint transform_location = glGetUniformLocation(msdf_program, "transform");
-
+    GLuint texture_location = glGetUniformLocation(msdf_program, "sdf_texture");
+    GLuint scale_location = glGetUniformLocation(msdf_program, "sdf_scale");
     const std::string project_root = PROJECT_ROOT;
     const std::string font_path = project_root + "/font/font-msdf.json";
 
@@ -167,6 +196,25 @@ int main() try
 
         stbi_image_free(data);
     }
+    std::string text = "Hello, world!";
+
+    GLuint vao, vbo;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+    glGenBuffers(1, &vbo);
+    {
+        vertex vertices[3];
+        vertices[0] = {{0, 0}, {0, 0}};
+        vertices[1] = {{100, 0}, {1, 0}};
+        vertices[2] = {{0, 100}, {0, 1}};
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, 3 * sizeof(vertex), &vertices[0], GL_STATIC_DRAW);
+    }
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, position));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoord));
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
@@ -175,8 +223,8 @@ int main() try
     SDL_StartTextInput();
 
     std::map<SDL_Keycode, bool> button_down;
+    glm::mat4 transform;
 
-    std::string text = "Hello, world!";
     bool text_changed = true;
 
     bool running = true;
@@ -219,15 +267,68 @@ int main() try
         float dt = std::chrono::duration_cast<std::chrono::duration<float>>(now - last_frame_start).count();
         last_frame_start = now;
 
+        if(text_changed) {
+            glm::vec2 pen(0.f);
+            std::vector<vertex> vertices(6 * text.size());
+            for(int i = 0; i < text.size(); i++) {
+                auto g = font.glyphs.at(text[i]);
+                glm::vec2 offset(g.xoffset, g.yoffset);
+                vertices[6 * i + 0].position = pen + offset + glm::vec2(0, 0);
+                vertices[6 * i + 1].position = pen + offset + glm::vec2(g.width, 0);
+                vertices[6 * i + 2].position = pen + offset + glm::vec2(0, g.height);
+                vertices[6 * i + 3].position = pen + offset + glm::vec2(g.width, 0);
+                vertices[6 * i + 4].position = pen + offset + glm::vec2(0, g.height);
+                vertices[6 * i + 5].position = pen + offset + glm::vec2(g.width, g.height);
+                glm::vec2 texcorner(g.x, g.y);
+                vertices[6 * i + 0].texcoord = (texcorner + glm::vec2(0, 0)) / glm::vec2(texture_width, texture_height);
+                vertices[6 * i + 1].texcoord = (texcorner + glm::vec2(g.width, 0)) / glm::vec2(texture_width, texture_height);
+                vertices[6 * i + 2].texcoord = (texcorner + glm::vec2(0, g.height)) / glm::vec2(texture_width, texture_height);
+                vertices[6 * i + 3].texcoord = (texcorner + glm::vec2(g.width, 0)) / glm::vec2(texture_width, texture_height);
+                vertices[6 * i + 4].texcoord = (texcorner + glm::vec2(0, g.height)) / glm::vec2(texture_width, texture_height);
+                vertices[6 * i + 5].texcoord = (texcorner + glm::vec2(g.width, g.height)) / glm::vec2(texture_width, texture_height);
+                pen.x += g.advance;
+            }
+            glBindBuffer(GL_ARRAY_BUFFER, vbo);
+            glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vertex), vertices.data(), GL_STATIC_DRAW);
+
+            float xmin = std::numeric_limits<float>::max();
+            float ymin = std::numeric_limits<float>::max();
+            float xmax = std::numeric_limits<float>::min();
+            float ymax = std::numeric_limits<float>::min();
+
+            for(auto &v : vertices) {
+                xmin = std::min(xmin, v.position.x);
+                xmax = std::max(xmax, v.position.x);
+                ymin = std::min(ymin, v.position.y);
+                ymax = std::max(ymax, v.position.y);
+            }
+
+            float text_width = xmax - xmin;
+            float text_height = ymax - ymin;
+
+            transform = glm::mat4(1.f);
+            transform = glm::scale(transform, glm::vec3(5.f, 5.f, 0.f));
+            transform = glm::rotate(transform, glm::pi<float>(), glm::vec3(1.f, 0.f, 0.f));
+            transform = glm::translate(transform, glm::vec3(-1.f, -1.f, 0.f));
+            transform = glm::scale(transform, glm::vec3(2.f / (float)width, 2.f / (float)height, 0.f));
+            transform = glm::translate(transform, glm::vec3((float)width / 2.f - text_width / 2.f, (float)height / 2.f - text_height / 2.f, 0.f));
+            text_changed = false;
+        }
+
         glClearColor(0.8f, 0.8f, 1.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+        glUseProgram(msdf_program);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, texture);
-
+        glUniform1i(texture_location, 0);
+        glUniform1f(scale_location, font.sdf_scale);
+        glUniformMatrix4fv(transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform));
+        glBindVertexArray(vao);
+        glDrawArrays(GL_TRIANGLES, 0, 6 * text.size());
         SDL_GL_SwapWindow(window);
     }
 
