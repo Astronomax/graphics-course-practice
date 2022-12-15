@@ -84,7 +84,7 @@ void main() {
     if(alpha < 0.1)
     out_color = vec4(1.0, 1.0, 1.0, stroke_alpha);
     else
-    out_color = vec4(0.0, 0.0, 0.0, stroke_alpha);
+    out_color = vec4(0.0, 0.0, 0.0, alpha);
 }
 )";
 
