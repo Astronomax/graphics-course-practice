@@ -38,152 +38,6 @@
 #include "utils.hpp"
 #include "reactphysics3d/reactphysics3d.h"
 
-const char vertex_shader_source[] =
-    R"(#version 330 core
-
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
-
-layout (location = 0) in vec3 in_position;
-layout (location = 1) in vec3 in_normal;
-
-out vec3 position;
-out vec3 normal;
-
-void main()
-{
-    position = (model * vec4(in_position, 1.0)).xyz;
-    gl_Position = projection * view * vec4(position, 1.0);
-    normal = normalize(mat3(model) * in_normal);
-}
-)";
-
-const char fragment_shader_source[] =
-    R"(#version 330 core
-
-uniform vec3 camera_position;
-uniform vec3 albedo;
-uniform vec3 sun_direction;
-uniform vec3 sun_color;
-uniform mat4 shadow_projection;
-//uniform sampler2D shadow_map;
-uniform sampler2DShadow shadow_map;
-
-in vec3 position;
-in vec3 normal;
-
-layout (location = 0) out vec4 out_color;
-
-vec3 diffuse(vec3 direction) {
-    return albedo * max(0.0, dot(normal, direction));
-}
-
-vec3 specular(vec3 direction) {
-    float power = 64.0;
-    vec3 reflected_direction = 2.0 * normal * dot(normal, direction) - direction;
-    vec3 view_direction = normalize(camera_position - position);
-    return albedo * pow(max(0.0, dot(reflected_direction, view_direction)), power);
-}
-
-vec3 phong(vec3 direction) {
-    return diffuse(direction) + specular(direction);
-}
-
-void main()
-{
-    float ambient_light = 0.2;
-    vec3 color = albedo * ambient_light;
-
-    vec4 ndc = shadow_projection * vec4(position, 1);
-    /*
-    int in_shadow = 0;
-    if(-1.0 <= ndc.x && ndc.x <= 1.0)
-        if(-1.0 <= ndc.y && ndc.y <= 1.0)
-            //if(texture(shadow_map, ndc.xy * 0.5 + 0.5).r < ndc.z * 0.5 + 0.5)
-            if(texture(shadow_map, ndc.xyz * 0.5 + 0.5) == 0.0)
-                in_shadow = 1;
-
-    if(in_shadow == 0) color += sun_color * phong(sun_direction);
-    */
-
-    float r = 4.0, numer = 0.0, denom = 0.0;
-    for (int x = -3; x <= 3; ++x) {
-        for (int y = -3; y <= 3; ++y) {
-            float k = exp(-(pow(x, 2) + pow(y, 2)) / pow(r, 2));
-            numer += k * texture(shadow_map, (ndc.xyz * 0.5 + 0.5) +
-                vec3(x / textureSize(shadow_map, 0).x, y / textureSize(shadow_map, 0).y,0.0));
-            denom += k;
-        }
-    }
-    color += numer * sun_color * phong(sun_direction) / denom;
-    out_color = vec4(color, 1.0);
-}
-)";
-
-const GLchar *extra_fragment_shader_source = R"(#version 330 core
-    layout (location = 0) out vec4 out_color;
-    uniform sampler2D tex;
-    in vec2 texcoord;
-
-    void main() {
-        out_color = vec4(texture(tex, texcoord).r);
-    }
-)";
-
-const GLchar *extra_vertex_shader_source = R"(#version 330 core
-    const vec2 VERTICES[4] = vec2[4](
-	    vec2(-1.0, -1.0),
-	    vec2(-1.0, -0.5),
-	    vec2(-0.5, -1.0),
-        vec2(-0.5, -0.5)
-    );
-
-    out vec2 texcoord;
-
-    void main() {
-        gl_Position = vec4(VERTICES[gl_VertexID], 0.0, 1.0);
-        texcoord = VERTICES[gl_VertexID] * 2.0 + vec2(2.0);
-    }
-)";
-
-const GLchar *shadow_map_fragment_shader_source = R"(#version 330 core
-    void main() {}
-)";
-
-const GLchar *shadow_map_vertex_shader_source = R"(#version 330 core
-    uniform mat4 model;
-    uniform mat4 projection;
-
-    layout (location = 0) in vec3 in_position;
-
-    out vec3 color;
-
-    void main() {
-        gl_Position = projection * model * vec4(in_position, 1.0);
-    }
-)";
-
-const GLchar *debug_fragment_shader_source = R"(#version 330 core
-    layout (location = 0) out vec4 out_color;
-
-    void main() {
-        out_color = vec4(0.0, 0.0, 0.0, 1.0);
-    }
-)";
-
-const GLchar *debug_vertex_shader_source = R"(#version 330 core
-    uniform mat4 model;
-    uniform mat4 view;
-    uniform mat4 projection;
-
-    layout (location = 0) in vec3 in_position;
-
-    void main() {
-        gl_Position = projection * view * model * vec4(in_position, 1.0);
-    }
-)";
-
 GLuint create_shader(GLenum type, const char *source) {
     GLuint result = glCreateShader(type);
     glShaderSource(result, 1, &source, nullptr);
@@ -367,8 +221,8 @@ int main() try {
     ball->applyLocalForceAtCenterOfMass(rp3d::Vector3(0.f, 0.f, 40000.f));
 
 
-    auto debug_vertex_shader = create_shader(GL_VERTEX_SHADER, debug_vertex_shader_source);
-    auto debug_fragment_shader = create_shader(GL_FRAGMENT_SHADER, debug_fragment_shader_source);
+    auto debug_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/debug.vert");
+    auto debug_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/debug.frag");
     auto debug_program = create_program(debug_vertex_shader, debug_fragment_shader);
 
     GLint _model_location = glGetUniformLocation(debug_program, "model");
@@ -514,11 +368,13 @@ int main() try {
         glUniformMatrix4fv(_view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
 
+
         glBindBuffer(GL_ARRAY_BUFFER, debug_vbo);
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(rp3d::Vector3), vertices.data(), GL_STATIC_DRAW);
         glBindVertexArray(debug_vao);
         glDrawArrays(GL_TRIANGLES, 0, vertices.size());
-
+*/
+/*
         vertices.resize(2 * lines.size());
         for(int i = 0; i < lines.size(); i++) {
             vertices[2 * i + 0] = lines[i].point1;
