@@ -92,8 +92,6 @@ int main() try {
     const std::string pin_dir = project_root + "/pin/";
     const std::string pin_path = pin_dir + "pin.obj";
     const std::string alley_path = project_root + "/bowling_alley_mozilla_hubs_room/scene.gltf";
-    //const std::string alley_path = project_root + "/wolf/Wolf-Blender-2.82a.gltf";
-
 
     auto alley_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/alley.vert");
     auto alley_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/alley.frag");
@@ -107,16 +105,13 @@ int main() try {
     GLuint alley_use_texture_location = glGetUniformLocation(alley_program, "use_texture");
     GLuint alley_light_direction_location = glGetUniformLocation(alley_program, "light_direction");
 
-
-
     auto const alley_gltf_model = load_gltf(alley_path);
     GLuint alley_vbo;
     glGenBuffers(1, &alley_vbo);
     glBindBuffer(GL_ARRAY_BUFFER, alley_vbo);
     glBufferData(GL_ARRAY_BUFFER, alley_gltf_model.buffer.size(), alley_gltf_model.buffer.data(), GL_STATIC_DRAW);
 
-    auto setup_attribute = [](int index, gltf_model::accessor const & accessor, bool integer = false)
-    {
+    auto setup_attribute = [](int index, gltf_model::accessor const & accessor, bool integer = false) {
         glEnableVertexAttribArray(index);
         if (integer)
             glVertexAttribIPointer(index, accessor.size, accessor.type, accessor.view.stride, reinterpret_cast<void *>(accessor.offset + accessor.view.offset));
@@ -129,7 +124,6 @@ int main() try {
         auto& result = meshes.emplace_back();
         glGenVertexArrays(1, &result.vao);
         glBindVertexArray(result.vao);
-        //glBindBuffer(result.indices.view.target, alley_vbo);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, alley_vbo);
         result.indices = mesh.indices;
         setup_attribute(0, mesh.position);
@@ -167,13 +161,31 @@ int main() try {
     GLint view_location = glGetUniformLocation(bowling_program, "view");
     GLint projection_location = glGetUniformLocation(bowling_program, "projection");
 
-    float floor_height = 0.2f, eps = 1e-2;
-
-    rp3d::RigidBody *floor = world->createRigidBody(rp3d::Transform(rp3d::Vector3(0, 0, 0), rp3d::Quaternion::identity()));
-    rp3d::BoxShape* floorShape = physicsCommon.createBoxShape(rp3d::Vector3(6.f, floor_height, 6.f));
-    floor->addCollider(floorShape, rp3d::Transform(rp3d::Vector3(0, 0.0f, 0), rp3d::Quaternion::identity()));
-    floor->updateMassPropertiesFromColliders();
+    float eps = 1e-2;
+    float floor_height = 0.2f;
+    rp3d::RigidBody *floor = world->createRigidBody(rp3d::Transform(rp3d::Vector3(0, 0, -10.f), rp3d::Quaternion::identity()));
+    rp3d::BoxShape* floorShape = physicsCommon.createBoxShape(rp3d::Vector3(20.f, floor_height, 20.f));
+    floor->addCollider(floorShape, rp3d::Transform(rp3d::Vector3::zero(), rp3d::Quaternion::identity()));
     floor->setType(rp3d::BodyType::STATIC);
+
+    float wall_thickness = 0.2f;
+    rp3d::RigidBody *wall = world->createRigidBody(rp3d::Transform(rp3d::Vector3(3.f, 1.3f, 1.f), rp3d::Quaternion::identity()));
+    rp3d::BoxShape* wallShape = physicsCommon.createBoxShape(rp3d::Vector3(7.f, 1.5f, wall_thickness));
+    wall->addCollider(wallShape, rp3d::Transform(rp3d::Vector3::zero(), rp3d::Quaternion::identity()));
+    wall->setType(rp3d::BodyType::STATIC);
+
+    float border_height = 0.1f;
+    float border_spawn_y = border_height / 2.f + floor_height + eps;
+    float border_spawn_z = -2.6f;
+
+    rp3d::RigidBody *border1 = world->createRigidBody(rp3d::Transform(rp3d::Vector3(-1.2f, border_spawn_y, border_spawn_z), rp3d::Quaternion::identity()));
+    rp3d::BoxShape* borderShape = physicsCommon.createBoxShape(rp3d::Vector3(0.27f, border_height, 3.4f));
+    border1->addCollider(borderShape, rp3d::Transform(rp3d::Vector3::zero(), rp3d::Quaternion::identity()));
+    border1->setType(rp3d::BodyType::STATIC);
+
+    rp3d::RigidBody *border2 = world->createRigidBody(rp3d::Transform(rp3d::Vector3(1.3f, border_spawn_y, border_spawn_z), rp3d::Quaternion::identity()));
+    border2->addCollider(borderShape, rp3d::Transform(rp3d::Vector3::zero(), rp3d::Quaternion::identity()));
+    border2->setType(rp3d::BodyType::STATIC);
 
     std::vector<vertex> ball_vertices;
     {
@@ -193,7 +205,7 @@ int main() try {
     rp3d::RigidBody *ball = world->createRigidBody(rp3d::Transform(ball_pos, rp3d::Quaternion::identity()));
     rp3d::SphereShape* ballShape = physicsCommon.createSphereShape(ball_height / 2.f);
     ball->addCollider(ballShape, rp3d::Transform(rp3d::Vector3::zero(), rp3d::Quaternion::identity()));
-    ball->setMass(10);
+    ball->updateMassPropertiesFromColliders();
 
     std::vector<vertex> pin_vertices;
     {
@@ -218,7 +230,7 @@ int main() try {
         pins[i] = world->createRigidBody(rp3d::Transform(pos, rp3d::Quaternion::identity()));
         rp3d::BoxShape *pinShape = physicsCommon.createBoxShape(get_bbox_size(pin_bounding_box) / 2.f);
         pins[i]->addCollider(pinShape, rp3d::Transform(rp3d::Vector3::zero(), rp3d::Quaternion::identity()));
-        pins[i]->setMass(2.5);
+        pins[i]->updateMassPropertiesFromColliders();
     }
 
     glm::mat4 ball_model = glm::mat4(1.f);
@@ -266,9 +278,9 @@ int main() try {
     auto debug_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/debug.frag");
     auto debug_program = create_program(debug_vertex_shader, debug_fragment_shader);
 
-    GLint _model_location = glGetUniformLocation(debug_program, "model");
-    GLint _view_location = glGetUniformLocation(debug_program, "view");
-    GLint _projection_location = glGetUniformLocation(debug_program, "projection");
+    GLint debug_model_location = glGetUniformLocation(debug_program, "model");
+    GLint debug_view_location = glGetUniformLocation(debug_program, "view");
+    GLint debug_projection_location = glGetUniformLocation(debug_program, "projection");
 
     GLuint debug_vao, debug_vbo;
     glGenVertexArrays(1, &debug_vao);
@@ -280,17 +292,20 @@ int main() try {
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(rp3d::Vector3), (void *) 0);
 
+    glm::mat4 debug_model(1.f);
+
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
     std::map<SDL_Keycode, bool> button_down;
 
-    float time = 0.f;
+    float time = 0.f, accumulated_time = 0.f;
+    float time_per_update = 1.f / 60.f;
     float camera_distance = 12.f;
     float camera_angle = glm::pi<float>();
     float camera_elevation = glm::pi<float>() / 36.f;
     glm::vec3 light_direction = glm::normalize(glm::vec3(1.f, 2.f, 3.f));
 
-    ball->applyLocalForceAtCenterOfMass(rp3d::Vector3(0.f, 0.f, 40000.f));
+    ball->applyLocalForceAtCenterOfMass(rp3d::Vector3(0.f, 0.f, 10.f));
 
     while (true)
     {
@@ -323,8 +338,12 @@ int main() try {
         float dt = std::chrono::duration_cast<std::chrono::duration<float>>(now - last_frame_start).count();
         last_frame_start = now;
         time += dt;
+        accumulated_time += dt;
 
-        world->update(dt);
+        while(accumulated_time > time_per_update) {
+            world->update(time_per_update);
+            accumulated_time -= time_per_update;
+        }
         auto lines = debugRenderer.getLines();
         auto triangles = debugRenderer.getTriangles();
 
@@ -344,8 +363,6 @@ int main() try {
             camera_elevation -= 2.f * dt;
 
         float near = 0.1f, far = 100.f;
-
-        glm::mat4 model(1.f);
 
         glm::mat4 view(1.f);
         view = glm::translate(view, {0.f, 0.f, -camera_distance});
@@ -418,10 +435,6 @@ int main() try {
         draw_meshes(true);
         glDepthMask(GL_TRUE);
 
-
-
-
-
         glUseProgram(bowling_program);
         glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&ball_model));
         glUniformMatrix4fv(transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&ball_transform));
@@ -438,37 +451,35 @@ int main() try {
             glDrawArrays(GL_TRIANGLES, 0, pin_vertices.size());
         }
 
-        /*
+
         std::vector<rp3d::Vector3> vertices(3 * triangles.size());
         for(int i = 0; i < triangles.size(); i++) {
             vertices[3 * i + 0] = triangles[i].point1;
             vertices[3 * i + 1] = triangles[i].point2;
             vertices[3 * i + 2] = triangles[i].point3;
         }
-
         glUseProgram(debug_program);
         glLineWidth(2.f);
-        glUniformMatrix4fv(_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
-        glUniformMatrix4fv(_view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
-        glUniformMatrix4fv(_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
+        glUniformMatrix4fv(debug_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&debug_model));
+        glUniformMatrix4fv(debug_view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
+        glUniformMatrix4fv(debug_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
 
+        /*
         glBindBuffer(GL_ARRAY_BUFFER, debug_vbo);
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(rp3d::Vector3), vertices.data(), GL_STATIC_DRAW);
         glBindVertexArray(debug_vao);
         glDrawArrays(GL_TRIANGLES, 0, vertices.size());
         */
-        /*
+
         vertices.resize(2 * lines.size());
         for(int i = 0; i < lines.size(); i++) {
             vertices[2 * i + 0] = lines[i].point1;
             vertices[2 * i + 1] = lines[i].point2;
         }
-
         glBindBuffer(GL_ARRAY_BUFFER, debug_vbo);
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(rp3d::Vector3), vertices.data(), GL_STATIC_DRAW);
         glBindVertexArray(debug_vao);
         glDrawArrays(GL_LINES, 0, vertices.size());
-        */
 
         SDL_GL_SwapWindow(window);
     }
