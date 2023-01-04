@@ -20,6 +20,8 @@ struct gltf_model
     {
         unsigned int offset;
         unsigned int size;
+        unsigned int stride;
+        unsigned int target;
     };
 
     struct accessor
@@ -28,6 +30,7 @@ struct gltf_model
         unsigned int type;
         unsigned int size;
         unsigned int count;
+        unsigned int offset;
     };
 
     struct material
@@ -71,9 +74,7 @@ struct gltf_model
     {
         std::string name;
         struct material material;
-
         accessor indices;
-
         accessor position;
         accessor normal;
         accessor texcoord;

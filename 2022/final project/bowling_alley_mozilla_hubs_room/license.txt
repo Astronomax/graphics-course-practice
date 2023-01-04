@@ -1,0 +1,11 @@
+Model Information:
+* title:	Bowling Alley Mozilla Hubs Room
+* source:	https://sketchfab.com/3d-models/bowling-alley-mozilla-hubs-room-644609db6a5a435098b305413b162266
+* author:	Lazanja (https://sketchfab.com/Lazanja)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Bowling Alley Mozilla Hubs Room" (https://sketchfab.com/3d-models/bowling-alley-mozilla-hubs-room-644609db6a5a435098b305413b162266) by Lazanja (https://sketchfab.com/Lazanja) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

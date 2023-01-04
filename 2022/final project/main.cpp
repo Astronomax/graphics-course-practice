@@ -38,39 +38,12 @@
 #include "utils.hpp"
 #include "reactphysics3d/reactphysics3d.h"
 
-GLuint create_shader(GLenum type, const char *source) {
-    GLuint result = glCreateShader(type);
-    glShaderSource(result, 1, &source, nullptr);
-    glCompileShader(result);
-    GLint status;
-    glGetShaderiv(result, GL_COMPILE_STATUS, &status);
-    if (status != GL_TRUE) {
-        GLint info_log_length;
-        glGetShaderiv(result, GL_INFO_LOG_LENGTH, &info_log_length);
-        std::string info_log(info_log_length, '\0');
-        glGetShaderInfoLog(result, info_log.size(), nullptr, info_log.data());
-        throw std::runtime_error("Shader compilation failed: " + info_log);
-    }
-    return result;
-}
-
-GLuint create_program(GLuint vertex_shader, GLuint fragment_shader) {
-    GLuint result = glCreateProgram();
-    glAttachShader(result, vertex_shader);
-    glAttachShader(result, fragment_shader);
-    glLinkProgram(result);
-
-    GLint status;
-    glGetProgramiv(result, GL_LINK_STATUS, &status);
-    if (status != GL_TRUE) {
-        GLint info_log_length;
-        glGetProgramiv(result, GL_INFO_LOG_LENGTH, &info_log_length);
-        std::string info_log(info_log_length, '\0');
-        glGetProgramInfoLog(result, info_log.size(), nullptr, info_log.data());
-        throw std::runtime_error("Program linkage failed: " + info_log);
-    }
-    return result;
-}
+struct mesh
+{
+    GLuint vao;
+    gltf_model::accessor indices;
+    gltf_model::material material;
+};
 
 rp3d::Vector3 get_bbox_size(bounding_box bbox) {
     float x_bounds[2] = {std::numeric_limits<float>::infinity(),
@@ -92,17 +65,90 @@ rp3d::Vector3 get_bbox_size(bounding_box bbox) {
              z_bounds[1] - z_bounds[0] };
 }
 
+std::vector<rp3d::Vector2> generate_pin_positions() {
+    std::vector<rp3d::Vector2> res;
+    float dz = 0.14f;
+    for(int i = 1; i <= 4; i++) {
+        float x = -(float)(i - 1) * dz;
+        float z = (float)(i - 1) * dz;
+        float dx = (2.f * z) / (float)(i - 1);
+        for(int j = 0; j < i; j++) {
+            res.emplace_back(x, z);
+            x += dx;
+        }
+    }
+    return res;
+}
+
 int main() try {
-    auto *window = create_window("Final project");
+    auto *window = create_window("Bowling");
     auto gl_context = create_context(window);
     int width, height;
     SDL_GetWindowSize(window, &width, &height);
 
-    std::string project_root = PROJECT_ROOT;
-    std::string ball_dir = project_root + "/ball/";
-    std::string ball_path = ball_dir + "ball.obj";
-    std::string pin_dir = project_root + "/pin/";
-    std::string pin_path = pin_dir + "pin.obj";
+    const std::string project_root = PROJECT_ROOT;
+    const std::string ball_dir = project_root + "/ball/";
+    const std::string ball_path = ball_dir + "ball.obj";
+    const std::string pin_dir = project_root + "/pin/";
+    const std::string pin_path = pin_dir + "pin.obj";
+    const std::string alley_path = project_root + "/bowling_alley_mozilla_hubs_room/scene.gltf";
+    //const std::string alley_path = project_root + "/wolf/Wolf-Blender-2.82a.gltf";
+
+
+    auto alley_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/alley.vert");
+    auto alley_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/alley.frag");
+    auto alley_program = create_program(alley_vertex_shader, alley_fragment_shader);
+
+    GLuint alley_model_location = glGetUniformLocation(alley_program, "model");
+    GLuint alley_view_location = glGetUniformLocation(alley_program, "view");
+    GLuint alley_projection_location = glGetUniformLocation(alley_program, "projection");
+    GLuint alley_albedo_location = glGetUniformLocation(alley_program, "albedo");
+    GLuint alley_color_location = glGetUniformLocation(alley_program, "color");
+    GLuint alley_use_texture_location = glGetUniformLocation(alley_program, "use_texture");
+    GLuint alley_light_direction_location = glGetUniformLocation(alley_program, "light_direction");
+
+
+
+    auto const alley_gltf_model = load_gltf(alley_path);
+    GLuint alley_vbo;
+    glGenBuffers(1, &alley_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, alley_vbo);
+    glBufferData(GL_ARRAY_BUFFER, alley_gltf_model.buffer.size(), alley_gltf_model.buffer.data(), GL_STATIC_DRAW);
+
+    auto setup_attribute = [](int index, gltf_model::accessor const & accessor, bool integer = false)
+    {
+        glEnableVertexAttribArray(index);
+        if (integer)
+            glVertexAttribIPointer(index, accessor.size, accessor.type, accessor.view.stride, reinterpret_cast<void *>(accessor.offset + accessor.view.offset));
+        else
+            glVertexAttribPointer(index, accessor.size, accessor.type, GL_FALSE, accessor.view.stride, reinterpret_cast<void *>(accessor.offset + accessor.view.offset));
+    };
+
+    std::vector<mesh> meshes;
+    for (auto const & mesh : alley_gltf_model.meshes) {
+        auto& result = meshes.emplace_back();
+        glGenVertexArrays(1, &result.vao);
+        glBindVertexArray(result.vao);
+        //glBindBuffer(result.indices.view.target, alley_vbo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, alley_vbo);
+        result.indices = mesh.indices;
+        setup_attribute(0, mesh.position);
+        setup_attribute(1, mesh.normal);
+        setup_attribute(2, mesh.texcoord);
+        result.material = mesh.material;
+    }
+
+    texture_holder textures(3);
+    for (auto const &mesh : meshes) {
+        if (!mesh.material.texture_path) continue;
+        auto path = std::filesystem::path(alley_path).parent_path() / *mesh.material.texture_path;
+        textures.load_texture(path);
+    }
+
+    glm::mat4 alley_model = glm::mat4(1.f);
+    alley_model = glm::translate(alley_model, {0.2f, 1.1f, -11.7f});
+    alley_model = glm::rotate(alley_model, glm::pi<float>(), {0.f, 1.f, 0.f});
+    alley_model = glm::scale(alley_model, glm::vec3(13.f));
 
     rp3d::PhysicsCommon physicsCommon;
     rp3d::PhysicsWorld* world = physicsCommon.createPhysicsWorld();
@@ -121,6 +167,14 @@ int main() try {
     GLint view_location = glGetUniformLocation(bowling_program, "view");
     GLint projection_location = glGetUniformLocation(bowling_program, "projection");
 
+    float floor_height = 0.2f, eps = 1e-2;
+
+    rp3d::RigidBody *floor = world->createRigidBody(rp3d::Transform(rp3d::Vector3(0, 0, 0), rp3d::Quaternion::identity()));
+    rp3d::BoxShape* floorShape = physicsCommon.createBoxShape(rp3d::Vector3(6.f, floor_height, 6.f));
+    floor->addCollider(floorShape, rp3d::Transform(rp3d::Vector3(0, 0.0f, 0), rp3d::Quaternion::identity()));
+    floor->updateMassPropertiesFromColliders();
+    floor->setType(rp3d::BodyType::STATIC);
+
     std::vector<vertex> ball_vertices;
     {
         tinyobj::attrib_t attrib;
@@ -134,9 +188,11 @@ int main() try {
     auto ball_center = std::accumulate(ball_bounding_box.begin(), ball_bounding_box.end(), glm::vec3(0.f)) / 8.f;
 
     float ball_height = get_bbox_size(ball_bounding_box).y;
-    rp3d::RigidBody *ball = world->createRigidBody(rp3d::Transform(rp3d::Vector3(0.f, ball_height / 2.f + 0.2f + 0.01f, -3.f), rp3d::Quaternion::identity()));
+    float ball_spawn_y = ball_height / 2.f + floor_height + eps;
+    rp3d::Vector3 ball_pos(0.f, ball_spawn_y, -6.f);
+    rp3d::RigidBody *ball = world->createRigidBody(rp3d::Transform(ball_pos, rp3d::Quaternion::identity()));
     rp3d::SphereShape* ballShape = physicsCommon.createSphereShape(ball_height / 2.f);
-    ball->addCollider(ballShape, rp3d::Transform(rp3d::Vector3(0, 0.0f, 0), rp3d::Quaternion::identity()));
+    ball->addCollider(ballShape, rp3d::Transform(rp3d::Vector3::zero(), rp3d::Quaternion::identity()));
     ball->setMass(10);
 
     std::vector<vertex> pin_vertices;
@@ -153,28 +209,17 @@ int main() try {
     rp3d::Vector3 pin_size = get_bbox_size(ball_bounding_box);
     float pin_height = pin_size.y;
 
+    std::vector<rp3d::RigidBody*> pins(10);
+    auto positions = generate_pin_positions();
+    float pin_spawn_y = pin_height / 2.f + floor_height + eps;
 
-    std::vector<rp3d::RigidBody*> pins;
-
-    float dz = 0.14f;
-    for(int i = 1; i <= 4; i++) {
-        float x = -(float)(i - 1) * dz;
-        float z = (float)(i - 1) * dz;
-        float dx = (2.f * z) / (float)(i - 1);
-        for(int j = 0; j < i; j++) {
-            pins.push_back(world->createRigidBody(rp3d::Transform(rp3d::Vector3(x, pin_height / 2.f + 0.2f + 0.01f, z), rp3d::Quaternion::identity())));
-            rp3d::BoxShape *pinShape = physicsCommon.createBoxShape(get_bbox_size(pin_bounding_box) / 2.f);
-            pins.back()->addCollider(pinShape, rp3d::Transform(rp3d::Vector3(0, 0.0f, 0), rp3d::Quaternion::identity()));
-            pins.back()->setMass(2.5);
-            x += dx;
-        }
+    for(int i = 0; i < 10; i++) {
+        rp3d::Vector3 pos(positions[i].x, pin_spawn_y, positions[i].y);
+        pins[i] = world->createRigidBody(rp3d::Transform(pos, rp3d::Quaternion::identity()));
+        rp3d::BoxShape *pinShape = physicsCommon.createBoxShape(get_bbox_size(pin_bounding_box) / 2.f);
+        pins[i]->addCollider(pinShape, rp3d::Transform(rp3d::Vector3::zero(), rp3d::Quaternion::identity()));
+        pins[i]->setMass(2.5);
     }
-
-    rp3d::RigidBody *floor = world->createRigidBody(rp3d::Transform(rp3d::Vector3(0, 0, 0), rp3d::Quaternion::identity()));
-    rp3d::BoxShape* floorShape = physicsCommon.createBoxShape(rp3d::Vector3(6.f, 0.2f, 6.f));
-    floor->addCollider(floorShape, rp3d::Transform(rp3d::Vector3(0, 0.0f, 0), rp3d::Quaternion::identity()));
-    floor->updateMassPropertiesFromColliders();
-    floor->setType(rp3d::BodyType::STATIC);
 
     glm::mat4 ball_model = glm::mat4(1.f);
     ball_model = glm::translate(ball_model, -ball_center);
@@ -217,10 +262,6 @@ int main() try {
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, texcoords));
 
-
-    ball->applyLocalForceAtCenterOfMass(rp3d::Vector3(0.f, 0.f, 40000.f));
-
-
     auto debug_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/debug.vert");
     auto debug_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/debug.frag");
     auto debug_program = create_program(debug_vertex_shader, debug_fragment_shader);
@@ -228,7 +269,6 @@ int main() try {
     GLint _model_location = glGetUniformLocation(debug_program, "model");
     GLint _view_location = glGetUniformLocation(debug_program, "view");
     GLint _projection_location = glGetUniformLocation(debug_program, "projection");
-
 
     GLuint debug_vao, debug_vbo;
     glGenVertexArrays(1, &debug_vao);
@@ -240,15 +280,17 @@ int main() try {
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(rp3d::Vector3), (void *) 0);
 
-
     auto last_frame_start = std::chrono::high_resolution_clock::now();
-
-    float time = 0.f;
 
     std::map<SDL_Keycode, bool> button_down;
 
-    float camera_distance = 6.f;
-    auto camera_angle = glm::pi<float>() / 2.f, camera_elevation = glm::pi<float>() / 6.f;
+    float time = 0.f;
+    float camera_distance = 12.f;
+    float camera_angle = glm::pi<float>();
+    float camera_elevation = glm::pi<float>() / 36.f;
+    glm::vec3 light_direction = glm::normalize(glm::vec3(1.f, 2.f, 3.f));
+
+    ball->applyLocalForceAtCenterOfMass(rp3d::Vector3(0.f, 0.f, 40000.f));
 
     while (true)
     {
@@ -301,9 +343,7 @@ int main() try {
         if (button_down[SDLK_s])
             camera_elevation -= 2.f * dt;
 
-
-        float near = 0.1f;
-        float far = 100.f;
+        float near = 0.1f, far = 100.f;
 
         glm::mat4 model(1.f);
 
@@ -328,7 +368,7 @@ int main() try {
         for(int i = 0; i < 10; i++) {
             pins[i]->getTransform().getOpenGLMatrix(reinterpret_cast<float *>(&pin_transforms[i]));
         }
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+
         glViewport(0, 0, width, height);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glClearColor(0.8f, 0.8f, 1.f, 0.f);
@@ -336,6 +376,51 @@ int main() try {
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
+
+
+        auto draw_meshes = [&](bool transparent) {
+            for (auto const &mesh : meshes) {
+                if (mesh.material.transparent != transparent)
+                    continue;
+                if (mesh.material.two_sided)
+                    glDisable(GL_CULL_FACE);
+                else
+                    glEnable(GL_CULL_FACE);
+                if (transparent)
+                    glEnable(GL_BLEND);
+                else
+                    glDisable(GL_BLEND);
+
+                if (mesh.material.texture_path) {
+                    auto path = std::filesystem::path(alley_path).parent_path() / *mesh.material.texture_path;
+                    glUniform1i(alley_albedo_location, textures.get_texture(path));
+                    glUniform1i(alley_use_texture_location, 1);
+                } else if (mesh.material.color) {
+                    glUniform1i(alley_use_texture_location, 0);
+                    glUniform4fv(alley_color_location, 1, reinterpret_cast<const float *>(&(*mesh.material.color)));
+                } else continue;
+                glBindVertexArray(mesh.vao);
+
+                glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type,
+                               reinterpret_cast<void *>(mesh.indices.offset + mesh.indices.view.offset));
+            }
+        };
+
+        glUseProgram(alley_program);
+        glUniformMatrix4fv(alley_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&alley_model));
+        glUniformMatrix4fv(alley_view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
+        glUniformMatrix4fv(alley_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
+        glUniform3fv(alley_light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
+        glUniform3f(alley_color_location, 0.8f, 0.8f, 0.8f);
+
+        draw_meshes(false);
+        glDepthMask(GL_FALSE);
+        draw_meshes(true);
+        glDepthMask(GL_TRUE);
+
+
+
+
 
         glUseProgram(bowling_program);
         glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&ball_model));
@@ -346,7 +431,6 @@ int main() try {
         glBindVertexArray(ball_vao);
         glDrawArrays(GL_TRIANGLES, 0, ball_vertices.size());
 
-
         for(int i = 0; i < 10; i++) {
             glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&pin_model));
             glUniformMatrix4fv(transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&pin_transforms[i]));
@@ -354,7 +438,7 @@ int main() try {
             glDrawArrays(GL_TRIANGLES, 0, pin_vertices.size());
         }
 
-/*
+        /*
         std::vector<rp3d::Vector3> vertices(3 * triangles.size());
         for(int i = 0; i < triangles.size(); i++) {
             vertices[3 * i + 0] = triangles[i].point1;
@@ -368,13 +452,12 @@ int main() try {
         glUniformMatrix4fv(_view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
 
-
         glBindBuffer(GL_ARRAY_BUFFER, debug_vbo);
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(rp3d::Vector3), vertices.data(), GL_STATIC_DRAW);
         glBindVertexArray(debug_vao);
         glDrawArrays(GL_TRIANGLES, 0, vertices.size());
-*/
-/*
+        */
+        /*
         vertices.resize(2 * lines.size());
         for(int i = 0; i < lines.size(); i++) {
             vertices[2 * i + 0] = lines[i].point1;
@@ -385,7 +468,7 @@ int main() try {
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(rp3d::Vector3), vertices.data(), GL_STATIC_DRAW);
         glBindVertexArray(debug_vao);
         glDrawArrays(GL_LINES, 0, vertices.size());
-*/
+        */
 
         SDL_GL_SwapWindow(window);
     }

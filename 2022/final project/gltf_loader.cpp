@@ -44,17 +44,24 @@ gltf_model load_gltf(std::filesystem::path const & path)
     auto parse_buffer_view = [&](int index) -> gltf_model::buffer_view
     {
         auto view = document["bufferViews"].GetArray()[index].GetObject();
-        return {view["byteOffset"].GetUint(), view["byteLength"].GetUint()};
+        return {
+            view["byteOffset"].GetUint(),
+            view["byteLength"].GetUint(),
+            view["byteStride"].GetUint(),
+            view["target"].GetUint()
+        };
     };
 
     auto parse_accessor = [&](int index) -> gltf_model::accessor
     {
         auto accessor = document["accessors"].GetArray()[index].GetObject();
+        unsigned int offset = (accessor.FindMember("byteOffset") == accessor.end() ? 0 : accessor["byteOffset"].GetUint());
         return {
             parse_buffer_view(accessor["bufferView"].GetInt()),
             accessor["componentType"].GetUint(),
             attribute_type_to_size(accessor["type"].GetString()),
             accessor["count"].GetUint(),
+            offset,
         };
     };
 
@@ -74,7 +81,7 @@ gltf_model load_gltf(std::filesystem::path const & path)
         };
     };
 
-    for (auto const & mesh : document["meshes"].GetArray())
+    for (auto const &mesh : document["meshes"].GetArray())
     {
         auto & result_mesh = result.meshes.emplace_back();
         result_mesh.name = mesh["name"].GetString();
@@ -82,27 +89,28 @@ gltf_model load_gltf(std::filesystem::path const & path)
         auto primitives = mesh["primitives"].GetArray();
         assert(primitives.Size() == 1);
 
-        auto const & attributes = primitives[0]["attributes"];
+        auto const &attributes = primitives[0]["attributes"];
 
         result_mesh.indices = parse_accessor(primitives[0]["indices"].GetInt());
         result_mesh.position = parse_accessor(attributes["POSITION"].GetInt());
         result_mesh.normal = parse_accessor(attributes["NORMAL"].GetInt());
         result_mesh.texcoord = parse_accessor(attributes["TEXCOORD_0"].GetInt());
-        result_mesh.joints = parse_accessor(attributes["JOINTS_0"].GetInt());
-        result_mesh.weights = parse_accessor(attributes["WEIGHTS_0"].GetInt());
+        //result_mesh.joints = parse_accessor(attributes["JOINTS_0"].GetInt());
+        //result_mesh.weights = parse_accessor(attributes["WEIGHTS_0"].GetInt());
 
-        auto const & material = document["materials"].GetArray()[primitives[0]["material"].GetInt()];
+        auto const &material = document["materials"].GetArray()[primitives[0]["material"].GetInt()];
 
         result_mesh.material.two_sided = material.HasMember("doubleSided") && material["doubleSided"].GetBool();
         result_mesh.material.transparent = material.HasMember("alphaMode") && (material["alphaMode"].GetString() == std::string("BLEND"));
 
-        auto const & pbr = material["pbrMetallicRoughness"];
+        auto const &pbr = material["pbrMetallicRoughness"];
         if (pbr.HasMember("baseColorTexture"))
             result_mesh.material.texture_path = parse_texture(pbr["baseColorTexture"]["index"].GetInt());
         else if (pbr.HasMember("baseColorFactor"))
             result_mesh.material.color = parse_color(pbr["baseColorFactor"].GetArray());
     }
 
+    /*
     auto skins = document["skins"].GetArray();
     assert(skins.Size() == 1);
 
@@ -215,6 +223,6 @@ gltf_model load_gltf(std::filesystem::path const & path)
             result.animations[std::move(name)] = std::move(result_animation);
         }
     }
-
+    */
     return result;
 }
