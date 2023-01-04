@@ -37,7 +37,8 @@ struct gltf_model
     {
         bool two_sided;
         bool transparent;
-        std::optional<std::string> texture_path;
+        std::optional<std::string> normal_texture;
+        std::optional<std::string> ambient_texture;
         std::optional<glm::vec4> color;
     };
 
@@ -76,10 +77,9 @@ struct gltf_model
         struct material material;
         accessor indices;
         accessor position;
+        accessor tangent;
         accessor normal;
         accessor texcoord;
-        accessor joints;
-        accessor weights;
     };
 
     std::vector<char> buffer;

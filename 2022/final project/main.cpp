@@ -103,6 +103,7 @@ int main() try {
     GLuint alley_view_location = glGetUniformLocation(alley_program, "view");
     GLuint alley_projection_location = glGetUniformLocation(alley_program, "projection");
     GLuint alley_albedo_location = glGetUniformLocation(alley_program, "albedo");
+    GLuint alley_normal_location = glGetUniformLocation(alley_program, "normal_texture");
     GLuint alley_color_location = glGetUniformLocation(alley_program, "color");
     GLuint alley_use_texture_location = glGetUniformLocation(alley_program, "use_texture");
     GLuint alley_light_direction_location = glGetUniformLocation(alley_program, "light_direction");
@@ -129,15 +130,18 @@ int main() try {
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, alley_vbo);
         result.indices = mesh.indices;
         setup_attribute(0, mesh.position);
-        setup_attribute(1, mesh.normal);
-        setup_attribute(2, mesh.texcoord);
+        setup_attribute(1, mesh.tangent);
+        setup_attribute(2, mesh.normal);
+        setup_attribute(3, mesh.texcoord);
         result.material = mesh.material;
     }
 
     for (auto const &mesh : meshes) {
-        if (!mesh.material.texture_path) continue;
-        auto path = std::filesystem::path(alley_path).parent_path() / *mesh.material.texture_path;
-        textures.load_texture(path);
+        if (!mesh.material.ambient_texture) continue;
+        auto ambient_path = std::filesystem::path(alley_path).parent_path() / *mesh.material.ambient_texture;
+        textures.load_texture(ambient_path);
+        auto normal_path = std::filesystem::path(alley_path).parent_path() / *mesh.material.normal_texture;
+        textures.load_texture(normal_path);
     }
 
     glm::mat4 alley_model = glm::mat4(1.f);
@@ -196,8 +200,10 @@ int main() try {
     std::vector<vertex> ball_vertices = get_vertices(ball_attrib, ball_shapes);
 
     for(auto &material : ball_materials) {
-        auto path = std::filesystem::path(alley_path).parent_path() / material.ambient_texname;
-        textures.load_texture(path);
+        auto ambient_path = std::filesystem::path(ball_path).parent_path() / material.ambient_texname;
+        textures.load_texture(ambient_path);
+        auto normal_path = std::filesystem::path(ball_path).parent_path() / material.normal_texname;
+        textures.load_texture(normal_path);
     }
 
     auto ball_bounding_box = get_bounding_box(ball_vertices);
@@ -218,8 +224,10 @@ int main() try {
     std::vector<vertex> pin_vertices = get_vertices(pin_attrib, pin_shapes);
 
     for(auto &material : pin_materials) {
-        auto path = std::filesystem::path(alley_path).parent_path() / material.ambient_texname;
-        textures.load_texture(path);
+        auto ambient_path = std::filesystem::path(pin_path).parent_path() / material.ambient_texname;
+        textures.load_texture(ambient_path);
+        auto normal_path = std::filesystem::path(pin_path).parent_path() / material.normal_texname;
+        textures.load_texture(normal_path);
     }
 
     auto pin_bounding_box = get_bounding_box(pin_vertices);
@@ -334,14 +342,18 @@ int main() try {
             else
                 glDisable(GL_BLEND);
 
-            if (mesh.material.texture_path) {
-                auto path = std::filesystem::path(alley_path).parent_path() / *mesh.material.texture_path;
-                glUniform1i(alley_albedo_location, textures.get_texture(path));
+            if (mesh.material.ambient_texture) {
+                auto ambient_path = std::filesystem::path(alley_path).parent_path() / *mesh.material.ambient_texture;
+                glUniform1i(alley_albedo_location, textures.get_texture(ambient_path));
                 glUniform1i(alley_use_texture_location, 1);
             } else if (mesh.material.color) {
                 glUniform1i(alley_use_texture_location, 0);
                 glUniform4fv(alley_color_location, 1, reinterpret_cast<const float *>(&(*mesh.material.color)));
             } else continue;
+
+            auto normal_path = std::filesystem::path(alley_path).parent_path() / *mesh.material.normal_texture;
+            glUniform1i(alley_normal_location, textures.get_texture(normal_path));
+
             glBindVertexArray(mesh.vao);
 
             glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type,
