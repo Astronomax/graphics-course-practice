@@ -24,7 +24,7 @@ float diffuse(vec3 real_normal, vec3 direction) {
 }
 
 float specular(vec3 real_normal, vec3 direction) {
-    float roughness = texture(roughness_texture, texcoord).r;
+    float roughness = texture(roughness_texture, texcoord).g;
     float power = 1.0 / pow(roughness, 2.0) - 1.0;
     vec3 reflected_direction = 2.0 * real_normal * dot(real_normal, direction) - direction;
     vec3 camera_direction = normalize(camera_position - position);
@@ -80,7 +80,7 @@ void main() {
     else
     albedo_color = color;
 
-    float ambient = 0.4;
+    float ambient = texture(roughness_texture, texcoord).r;
     vec3 light = ambient + light_color * phong(real_normal, light_direction) * shadow_factor;
     out_color = vec4(albedo_color.rgb * light, albedo_color.a);
 }

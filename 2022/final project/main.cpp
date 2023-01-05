@@ -109,7 +109,6 @@ int main() try {
     GLuint alley_light_direction_location = glGetUniformLocation(alley_program, "light_direction");
     GLint alley_shadow_map_location = glGetUniformLocation(alley_program, "shadow_map");
     GLint alley_transform_location = glGetUniformLocation(alley_program, "transform");
-
     GLuint alley_camera_location = glGetUniformLocation(alley_program, "camera_position");
     GLuint alley_roughness_location = glGetUniformLocation(alley_program, "roughness_texture");
     GLuint alley_light_color_location = glGetUniformLocation(alley_program, "light_color");
@@ -141,7 +140,6 @@ int main() try {
         setup_attribute(3, mesh.texcoord);
         result.material = mesh.material;
     }
-
 
     for (auto const &mesh : meshes) {
         if (!mesh.material.ambient_texture) continue;
@@ -175,6 +173,11 @@ int main() try {
     GLint bowling_view_location = glGetUniformLocation(bowling_program, "view");
     GLint bowling_projection_location = glGetUniformLocation(bowling_program, "projection");
     GLint bowling_color_location = glGetUniformLocation(bowling_program, "color");
+    GLuint bowling_light_direction_location = glGetUniformLocation(bowling_program, "light_direction");
+    GLint bowling_shadow_map_location = glGetUniformLocation(bowling_program, "shadow_map");
+    GLint bowling_shadow_transform_location = glGetUniformLocation(bowling_program, "shadow_transform");
+    GLuint bowling_camera_location = glGetUniformLocation(bowling_program, "camera_position");
+    GLuint bowling_light_color_location = glGetUniformLocation(bowling_program, "light_color");
 
     float eps = 1e-2;
     float floor_height = 0.2f;
@@ -331,12 +334,6 @@ int main() try {
 
     glm::mat4 debug_model(1.f);
 
-
-
-
-
-
-
     auto shadow_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/shadow.vert");
     auto shadow_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/shadow.frag");
     auto shadow_program = create_program(shadow_vertex_shader, shadow_fragment_shader);
@@ -344,7 +341,7 @@ int main() try {
     GLint shadow_model_location = glGetUniformLocation(shadow_program, "model");
     GLint shadow_transform_location = glGetUniformLocation(shadow_program, "transform");
 
-    GLsizei shadow_map_resolution = 4096;
+    GLsizei shadow_map_resolution = 8192;
     GLuint shadow_map, shadow_render_buffer, shadow_fbo;
     glGenTextures(1, &shadow_map);
     glGenRenderbuffers(1, &shadow_render_buffer);
@@ -371,8 +368,6 @@ int main() try {
     GLuint shadow_debug_vao;
     glGenVertexArrays(1, &shadow_debug_vao);
 
-
-
     auto last_frame_start = std::chrono::high_resolution_clock::now();
     std::map<SDL_Keycode, bool> button_down;
     float time = 0.f, accumulated_time = 0.f;
@@ -380,7 +375,7 @@ int main() try {
     float camera_distance = 12.f;
     float camera_angle = glm::pi<float>();
     float camera_elevation = glm::pi<float>() / 36.f;
-    glm::vec3 light_direction = glm::normalize(glm::vec3(1.f, 2.f, 3.f));
+    glm::vec3 light_direction = glm::normalize(glm::vec3(3.f, 2.f, -3.f));
     bool played = false;
 
 
@@ -524,9 +519,6 @@ int main() try {
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
 
 
-
-
-
         glm::vec3 light_z = -light_direction;
         glm::vec3 light_x = glm::normalize(glm::cross(light_z, {0.f, 1.f, 0.f}));
         glm::vec3 light_y = glm::normalize(glm::cross(light_x, light_z));
@@ -545,8 +537,6 @@ int main() try {
             {dz * light_z.x, dz * light_z.y, dz * light_z.z, 0.f},
             {floor_center.x, floor_center.y, floor_center.z, 1.f}
         }));
-
-
 
 
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
@@ -568,6 +558,23 @@ int main() try {
         glDepthMask(GL_FALSE);
         draw_meshes(true);
         glDepthMask(GL_TRUE);
+
+
+
+
+
+
+        glBindVertexArray(ball_vao);
+        glm::mat4 transform_model = ball_transform * ball_model;
+        glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform_model));
+        draw_obj(ball_shapes, ball_materials);
+
+        glBindVertexArray(pin_vao);
+        for(int i = 0; i < 10; i++) {
+            transform_model = pin_transforms[i] * pin_model;
+            glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&transform_model));
+            draw_obj(pin_shapes, pin_materials);
+        }
 
 
 
@@ -599,17 +606,28 @@ int main() try {
         glDepthMask(GL_TRUE);
 
         glUseProgram(bowling_program);
-        glUniformMatrix4fv(bowling_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&ball_model));
         glUniformMatrix4fv(bowling_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&ball_transform));
         glUniformMatrix4fv(bowling_view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(bowling_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
-        glBindVertexArray(ball_vao);
 
+
+
+
+        glUniform3fv(bowling_light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
+        glUniform3fv(bowling_camera_location, 1, reinterpret_cast<float *>(&camera_position));
+        glUniform3f(bowling_light_color_location, 0.8f, 0.8f, 0.8f);
+        glUniform1i(bowling_shadow_map_location, 1);
+
+
+
+
+        glUniformMatrix4fv(bowling_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&ball_model));
+        glBindVertexArray(ball_vao);
+        glUniformMatrix4fv(bowling_shadow_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&shadow_transform));
         draw_obj(ball_shapes, ball_materials);
 
         glUniformMatrix4fv(bowling_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&pin_model));
         glBindVertexArray(pin_vao);
-
         for(int i = 0; i < 10; i++) {
             glUniformMatrix4fv(bowling_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&pin_transforms[i]));
             draw_obj(pin_shapes, pin_materials);
