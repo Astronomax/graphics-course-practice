@@ -107,6 +107,8 @@ int main() try {
     GLuint alley_color_location = glGetUniformLocation(alley_program, "color");
     GLuint alley_use_texture_location = glGetUniformLocation(alley_program, "use_texture");
     GLuint alley_light_direction_location = glGetUniformLocation(alley_program, "light_direction");
+    GLint alley_shadow_map_location = glGetUniformLocation(alley_program, "shadow_map");
+    GLint alley_transform_location = glGetUniformLocation(alley_program, "transform");
 
     GLuint alley_camera_location = glGetUniformLocation(alley_program, "camera_position");
     GLuint alley_roughness_location = glGetUniformLocation(alley_program, "roughness_texture");
@@ -139,6 +141,7 @@ int main() try {
         setup_attribute(3, mesh.texcoord);
         result.material = mesh.material;
     }
+
 
     for (auto const &mesh : meshes) {
         if (!mesh.material.ambient_texture) continue;
@@ -175,10 +178,26 @@ int main() try {
 
     float eps = 1e-2;
     float floor_height = 0.2f;
-    rp3d::RigidBody *floor = world->createRigidBody(rp3d::Transform(rp3d::Vector3(0, 0, -10.f), rp3d::Quaternion::identity()));
+    rp3d::Vector3 floor_spawn_position = rp3d::Vector3(0, 0, -10.f);
+    rp3d::RigidBody *floor = world->createRigidBody(rp3d::Transform(floor_spawn_position, rp3d::Quaternion::identity()));
     rp3d::BoxShape* floorShape = physicsCommon.createBoxShape(rp3d::Vector3(20.f, floor_height, 20.f));
     floor->addCollider(floorShape, rp3d::Transform(rp3d::Vector3::zero(), rp3d::Quaternion::identity()));
     floor->setType(rp3d::BodyType::STATIC);
+
+    bounding_box floor_bounding_box;
+    glm::vec3 floor_center;
+    {
+        rp3d::Vector3 floor_size = floorShape->getHalfExtents() * 2.f;
+        int it = 0;
+        for (int i = 0; i <= 1; i++)
+            for (int j = 0; j <= 1; j++)
+                for (int k = 0; k <= 1; k++)
+                    floor_bounding_box[it++] = {
+                        floor_spawn_position.x + (i - 0.5f) * floor_size.x,
+                        floor_spawn_position.y + (j - 0.5f) * floor_size.y,
+                        floor_spawn_position.z + (k - 0.5f) * floor_size.z};
+        floor_center = std::accumulate(floor_bounding_box.begin(), floor_bounding_box.end(), glm::vec3(0.f)) / 8.f;
+    }
 
     float wall_thickness = 0.2f;
     rp3d::RigidBody *wall = world->createRigidBody(rp3d::Transform(rp3d::Vector3(3.f, 1.3f, 1.f), rp3d::Quaternion::identity()));
@@ -312,18 +331,56 @@ int main() try {
 
     glm::mat4 debug_model(1.f);
 
+
+
+
+
+
+
+    auto shadow_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/shadow.vert");
+    auto shadow_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/shadow.frag");
+    auto shadow_program = create_program(shadow_vertex_shader, shadow_fragment_shader);
+
+    GLint shadow_model_location = glGetUniformLocation(shadow_program, "model");
+    GLint shadow_transform_location = glGetUniformLocation(shadow_program, "transform");
+
+    GLsizei shadow_map_resolution = 1024;
+    GLuint shadow_map, shadow_render_buffer, shadow_fbo;
+    glGenTextures(1, &shadow_map);
+    glGenRenderbuffers(1, &shadow_render_buffer);
+    glGenFramebuffers(1, &shadow_fbo);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, shadow_map);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, shadow_map_resolution, shadow_map_resolution, 0, GL_RGBA, GL_FLOAT, nullptr);
+    glBindRenderbuffer(GL_RENDERBUFFER, shadow_render_buffer);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, shadow_map_resolution, shadow_map_resolution);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
+    glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, shadow_map, 0);
+    glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, shadow_render_buffer);
+    if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        throw std::runtime_error("Incomplete framebuffer!");
+
+    auto shadow_debug_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/shadow_debug.vert");
+    auto shadow_debug_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/shadow_debug.frag");
+    auto shadow_debug_program = create_program(shadow_debug_vertex_shader, shadow_debug_fragment_shader);
+    GLuint shadow_map_location = glGetUniformLocation(shadow_debug_program, "shadow_map");
+    GLuint shadow_debug_vao;
+    glGenVertexArrays(1, &shadow_debug_vao);
+
+
+
     auto last_frame_start = std::chrono::high_resolution_clock::now();
-
     std::map<SDL_Keycode, bool> button_down;
-
     float time = 0.f, accumulated_time = 0.f;
     float time_per_update = 1.f / 60.f;
     float camera_distance = 12.f;
     float camera_angle = glm::pi<float>();
     float camera_elevation = glm::pi<float>() / 36.f;
     glm::vec3 light_direction = glm::normalize(glm::vec3(1.f, 2.f, 3.f));
-
-
     bool played = false;
 
 
@@ -465,11 +522,62 @@ int main() try {
         float aspect = (float)height / (float)width;
         glm::mat4 projection = glm::perspective(glm::pi<float>() / 3.f, 1.f / aspect, near, far);
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
-        glm::vec3 sun_direction = glm::normalize(glm::vec3(std::sin(time * 0.5f), 2.f, std::cos(time * 0.5f)));
 
-        glViewport(0, 0, width, height);
+
+
+
+
+        glm::vec3 light_z = -light_direction;
+        glm::vec3 light_x = glm::normalize(glm::cross(light_z, {0.f, 1.f, 0.f}));
+        glm::vec3 light_y = glm::normalize(glm::cross(light_x, light_z));
+        float dx = -std::numeric_limits<float>::infinity();
+        float dy = -std::numeric_limits<float>::infinity();
+        float dz = -std::numeric_limits<float>::infinity();
+        for(auto _v : floor_bounding_box) {
+            glm::vec3 v = _v - floor_center;
+            dx = std::max(dx, abs(glm::dot(v, light_x)));
+            dy = std::max(dy, abs(glm::dot(v, light_y)));
+            dz = std::max(dz, abs(glm::dot(v, light_z)));
+        }
+        glm::mat4 shadow_transform = glm::inverse(glm::mat4({
+            {dx * light_x.x, dx * light_x.y, dx * light_x.z, 0.f},
+            {dy * light_y.x, dy * light_y.y, dy * light_y.z, 0.f},
+            {dz * light_z.x, dz * light_z.y, dz * light_z.z, 0.f},
+            {floor_center.x, floor_center.y, floor_center.z, 1.f}
+        }));
+
+
+
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
+        glViewport(0, 0, shadow_map_resolution, shadow_map_resolution);
+        glClearColor(1.f, 1.f, 0.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        glDepthFunc(GL_LEQUAL);
+
+        glUseProgram(shadow_program);
+        glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&alley_model));
+        glUniformMatrix4fv(shadow_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&shadow_transform));
+
+        draw_meshes(false);
+        glDepthMask(GL_FALSE);
+        draw_meshes(true);
+        glDepthMask(GL_TRUE);
+
+
+
+
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glViewport(0, 0, width, height);
         glClearColor(0.8f, 0.8f, 1.f, 0.f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
@@ -482,7 +590,8 @@ int main() try {
         glUniform3fv(alley_light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
         glUniform3fv(alley_camera_location, 1, reinterpret_cast<float *>(&camera_position));
         glUniform3f(alley_light_color_location, 0.8f, 0.8f, 0.8f);
-
+        glUniform1i(alley_shadow_map_location, 1);
+        glUniformMatrix4fv(alley_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&shadow_transform));
 
         draw_meshes(false);
         glDepthMask(GL_FALSE);
@@ -534,6 +643,11 @@ int main() try {
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(rp3d::Vector3), vertices.data(), GL_STATIC_DRAW);
         glBindVertexArray(debug_vao);
         glDrawArrays(GL_LINES, 0, vertices.size());
+
+        glUseProgram(shadow_debug_program);
+        glUniform1i(shadow_map_location, 1);
+        glBindVertexArray(shadow_debug_vao);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
 
         SDL_GL_SwapWindow(window);
     }
