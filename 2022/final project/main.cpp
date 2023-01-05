@@ -378,9 +378,14 @@ int main() try {
     GLuint environment_camera_position_location = glGetUniformLocation(environment_program, "camera_position");
     GLuint environment_environment_map_texture_location = glGetUniformLocation(environment_program, "environment_map_texture");
     GLuint environment_ambient_location = glGetUniformLocation(environment_program, "ambient");
+    GLuint environment_rotation_location = glGetUniformLocation(environment_program, "rotation");
 
     GLuint environment_vao;
     glGenVertexArrays(1, &environment_vao);
+
+    glm::mat4 environment_rotation(1.0);
+    environment_rotation = glm::rotate(environment_rotation, glm::pi<float>() / 2.f, {0.f, 1.f, 0.f});
+    environment_rotation = glm::rotate(environment_rotation, -glm::pi<float>() / 10.f, {1.f, 0.f, 0.f});
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
     std::map<SDL_Keycode, bool> button_down;
@@ -603,6 +608,7 @@ int main() try {
         glUniform3fv(environment_camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
         glUniform1i(environment_environment_map_texture_location, textures.get_texture(environment_path));
         glUniform3fv(environment_ambient_location, 1, reinterpret_cast<float *>(&ambient_color));
+        glUniformMatrix4fv(environment_rotation_location, 1, GL_FALSE, reinterpret_cast<float *>(&environment_rotation));
         glBindVertexArray(environment_vao);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
