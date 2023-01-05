@@ -217,8 +217,9 @@ int main() try {
 
     float ball_height = get_bbox_size(ball_bounding_box).y;
     float ball_spawn_y = ball_height / 2.f + floor_height + eps;
-    rp3d::Vector3 ball_pos(0.f, ball_spawn_y, -6.f);
-    rp3d::RigidBody *ball = world->createRigidBody(rp3d::Transform(ball_pos, rp3d::Quaternion::identity()));
+    rp3d::Vector3 ball_spawn_position(0.f, ball_spawn_y, -6.f);
+
+    rp3d::RigidBody *ball = world->createRigidBody(rp3d::Transform(ball_spawn_position, rp3d::Quaternion::identity()));
     rp3d::SphereShape* ballShape = physicsCommon.createSphereShape(ball_height / 2.f);
     ball->addCollider(ballShape, rp3d::Transform(rp3d::Vector3::zero(), rp3d::Quaternion::identity()));
     ball->updateMassPropertiesFromColliders();
@@ -244,10 +245,12 @@ int main() try {
     std::vector<rp3d::RigidBody*> pins(10);
     auto positions = generate_pin_positions();
     float pin_spawn_y = pin_height / 2.f + floor_height + eps;
+    std::vector<rp3d::Vector3> pin_spawn_positions(10);
+    for(int i = 0; i < 10; i++)
+        pin_spawn_positions[i] = rp3d::Vector3(positions[i].x, pin_spawn_y, positions[i].y);
 
     for(int i = 0; i < 10; i++) {
-        rp3d::Vector3 pos(positions[i].x, pin_spawn_y, positions[i].y);
-        pins[i] = world->createRigidBody(rp3d::Transform(pos, rp3d::Quaternion::identity()));
+        pins[i] = world->createRigidBody(rp3d::Transform(pin_spawn_positions[i], rp3d::Quaternion::identity()));
         rp3d::BoxShape *pinShape = physicsCommon.createBoxShape(get_bbox_size(pin_bounding_box) / 2.f);
         pins[i]->addCollider(pinShape, rp3d::Transform(rp3d::Vector3::zero(), rp3d::Quaternion::identity()));
         pins[i]->updateMassPropertiesFromColliders();
@@ -320,7 +323,8 @@ int main() try {
     float camera_elevation = glm::pi<float>() / 36.f;
     glm::vec3 light_direction = glm::normalize(glm::vec3(1.f, 2.f, 3.f));
 
-    ball->applyLocalForceAtCenterOfMass(rp3d::Vector3(0.f, 0.f, 10.f));
+
+    bool played = false;
 
 
     auto draw_obj = [bowling_color_location](
@@ -387,6 +391,27 @@ int main() try {
                     break;
                 case SDL_KEYDOWN:
                     button_down[event.key.keysym.sym] = true;
+                    if (event.key.keysym.sym == SDLK_SPACE) {
+                        if(!played) {
+                            ball->applyLocalForceAtCenterOfMass(rp3d::Vector3(0.f, 0.f, 10.f));
+                        }
+                        else {
+                            ball->resetForce();
+                            ball->resetTorque();
+                            ball->setLinearVelocity(rp3d::Vector3::zero());
+                            ball->setAngularVelocity(rp3d::Vector3::zero());
+                            ball->setTransform(rp3d::Transform(ball_spawn_position, rp3d::Quaternion::identity()));
+
+                            for(int i = 0; i < 10; i++) {
+                                pins[i]->resetForce();
+                                pins[i]->resetTorque();
+                                pins[i]->setLinearVelocity(rp3d::Vector3::zero());
+                                pins[i]->setAngularVelocity(rp3d::Vector3::zero());
+                                pins[i]->setTransform(rp3d::Transform(pin_spawn_positions[i], rp3d::Quaternion::identity()));
+                            }
+                        }
+                        played = !played;
+                    }
                     break;
                 case SDL_KEYUP:
                     button_down[event.key.keysym.sym] = false;
