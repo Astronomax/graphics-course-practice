@@ -376,7 +376,7 @@ int main() try {
     float camera_angle = glm::pi<float>();
     float camera_elevation = glm::pi<float>() / 36.f;
     glm::vec3 light_direction = glm::normalize(glm::vec3(3.f, 2.f, -3.f));
-    bool played = false;
+    bool played = false, debug = false;
 
 
     auto draw_obj = [bowling_color_location](
@@ -464,6 +464,9 @@ int main() try {
                         }
                         played = !played;
                     }
+                    else if(event.key.keysym.sym == SDLK_d) {
+                        debug = !debug;
+                    }
                     break;
                 case SDL_KEYUP:
                     button_down[event.key.keysym.sym] = false;
@@ -487,9 +490,6 @@ int main() try {
         ball->getTransform().getOpenGLMatrix(reinterpret_cast<float *>(&ball_transform));
         for(int i = 0; i < 10; i++)
             pins[i]->getTransform().getOpenGLMatrix(reinterpret_cast<float *>(&pin_transforms[i]));
-
-        auto lines = debugRenderer.getLines();
-        auto triangles = debugRenderer.getTriangles();
 
         if (button_down[SDLK_UP])
             camera_distance -= 4.f * dt;
@@ -633,39 +633,45 @@ int main() try {
             draw_obj(pin_shapes, pin_materials);
         }
 
-        std::vector<rp3d::Vector3> vertices(3 * triangles.size());
-        for(int i = 0; i < triangles.size(); i++) {
-            vertices[3 * i + 0] = triangles[i].point1;
-            vertices[3 * i + 1] = triangles[i].point2;
-            vertices[3 * i + 2] = triangles[i].point3;
+
+        if(debug) {
+            auto lines = debugRenderer.getLines();
+            auto triangles = debugRenderer.getTriangles();
+
+            std::vector<rp3d::Vector3> vertices(3 * triangles.size());
+            for (int i = 0; i < triangles.size(); i++) {
+                vertices[3 * i + 0] = triangles[i].point1;
+                vertices[3 * i + 1] = triangles[i].point2;
+                vertices[3 * i + 2] = triangles[i].point3;
+            }
+            glUseProgram(debug_program);
+            glLineWidth(2.f);
+            glUniformMatrix4fv(debug_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&debug_model));
+            glUniformMatrix4fv(debug_view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
+            glUniformMatrix4fv(debug_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
+
+            /*
+            glBindBuffer(GL_ARRAY_BUFFER, debug_vbo);
+            glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(rp3d::Vector3), vertices.data(), GL_STATIC_DRAW);
+            glBindVertexArray(debug_vao);
+            glDrawArrays(GL_TRIANGLES, 0, vertices.size());
+            */
+
+            vertices.resize(2 * lines.size());
+            for (int i = 0; i < lines.size(); i++) {
+                vertices[2 * i + 0] = lines[i].point1;
+                vertices[2 * i + 1] = lines[i].point2;
+            }
+            glBindBuffer(GL_ARRAY_BUFFER, debug_vbo);
+            glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(rp3d::Vector3), vertices.data(), GL_STATIC_DRAW);
+            glBindVertexArray(debug_vao);
+            glDrawArrays(GL_LINES, 0, vertices.size());
+
+            glUseProgram(shadow_debug_program);
+            glUniform1i(shadow_map_location, 1);
+            glBindVertexArray(shadow_debug_vao);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
         }
-        glUseProgram(debug_program);
-        glLineWidth(2.f);
-        glUniformMatrix4fv(debug_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&debug_model));
-        glUniformMatrix4fv(debug_view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
-        glUniformMatrix4fv(debug_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
-
-        /*
-        glBindBuffer(GL_ARRAY_BUFFER, debug_vbo);
-        glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(rp3d::Vector3), vertices.data(), GL_STATIC_DRAW);
-        glBindVertexArray(debug_vao);
-        glDrawArrays(GL_TRIANGLES, 0, vertices.size());
-        */
-
-        vertices.resize(2 * lines.size());
-        for(int i = 0; i < lines.size(); i++) {
-            vertices[2 * i + 0] = lines[i].point1;
-            vertices[2 * i + 1] = lines[i].point2;
-        }
-        glBindBuffer(GL_ARRAY_BUFFER, debug_vbo);
-        glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(rp3d::Vector3), vertices.data(), GL_STATIC_DRAW);
-        glBindVertexArray(debug_vao);
-        glDrawArrays(GL_LINES, 0, vertices.size());
-
-        glUseProgram(shadow_debug_program);
-        glUniform1i(shadow_map_location, 1);
-        glBindVertexArray(shadow_debug_vao);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
 
         SDL_GL_SwapWindow(window);
     }
