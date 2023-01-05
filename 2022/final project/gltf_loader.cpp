@@ -81,6 +81,24 @@ gltf_model load_gltf(std::filesystem::path const & path)
         };
     };
 
+    auto parse_vector = [&](auto const & array)
+    {
+        return glm::vec3{
+                array[0].GetFloat(),
+                array[1].GetFloat(),
+                array[2].GetFloat(),
+        };
+    };
+
+    auto parse_bounds = [&](int index)
+    {
+        auto accessor = document["accessors"].GetArray()[index].GetObject();
+        return std::make_pair(
+                parse_vector(accessor["min"]),
+                parse_vector(accessor["max"])
+        );
+    };
+
     for (auto const &mesh : document["meshes"].GetArray())
     {
         auto &result_mesh = result.meshes.emplace_back();
@@ -97,6 +115,7 @@ gltf_model load_gltf(std::filesystem::path const & path)
         result_mesh.normal = parse_accessor(attributes["NORMAL"].GetInt());
         result_mesh.texcoord = parse_accessor(attributes["TEXCOORD_0"].GetInt());
 
+        std::tie(result_mesh.min, result_mesh.max) = parse_bounds(attributes["POSITION"].GetInt());
 
         auto const &material = document["materials"].GetArray()[primitives[0]["material"].GetInt()];
 

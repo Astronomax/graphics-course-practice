@@ -31,7 +31,12 @@ add_executable(${TARGET_NAME} main.cpp
 		obj_parser.hpp obj_parser.cpp
 		stb_image.h stb_image.c
 		utils.hpp utils.cpp
-		gltf_loader.hpp gltf_loader.cpp)
+		gltf_loader.hpp gltf_loader.cpp
+		intersect.hpp
+		aabb.hpp
+		aabb.cpp
+		frustum.hpp
+		frustum.cpp)
 target_include_directories(${TARGET_NAME} PUBLIC
 	"${CMAKE_CURRENT_LIST_DIR}/rapidjson/include"
 	"${SDL2_INCLUDE_DIRS}"
@@ -44,4 +49,8 @@ target_link_libraries(${TARGET_NAME} PUBLIC
 	"${OPENGL_LIBRARIES}"
 	ReactPhysics3D::ReactPhysics3D
 )
-target_compile_definitions(${TARGET_NAME} PUBLIC -DPROJECT_ROOT="${PROJECT_ROOT}")
+target_compile_definitions(${TARGET_NAME} PUBLIC
+		-DPROJECT_ROOT="${PROJECT_ROOT}"
+		-DGLM_FORCE_SWIZZLE
+		-DGLM_ENABLE_EXPERIMENTAL
+		)

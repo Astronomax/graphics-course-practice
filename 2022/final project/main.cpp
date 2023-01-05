@@ -38,12 +38,9 @@
 #include "utils.hpp"
 #include "reactphysics3d/reactphysics3d.h"
 
-struct mesh
-{
-    GLuint vao;
-    gltf_model::accessor indices;
-    gltf_model::material material;
-};
+#include "aabb.hpp"
+#include "frustum.hpp"
+#include "intersect.hpp"
 
 rp3d::Vector3 get_bbox_size(bounding_box bbox) {
     float x_bounds[2] = {std::numeric_limits<float>::infinity(),
@@ -119,29 +116,30 @@ int main() try {
     glBindBuffer(GL_ARRAY_BUFFER, alley_vbo);
     glBufferData(GL_ARRAY_BUFFER, alley_gltf_model.buffer.size(), alley_gltf_model.buffer.data(), GL_STATIC_DRAW);
 
-    auto setup_attribute = [](int index, gltf_model::accessor const & accessor, bool integer = false) {
-        glEnableVertexAttribArray(index);
-        if (integer)
-            glVertexAttribIPointer(index, accessor.size, accessor.type, accessor.view.stride, reinterpret_cast<void *>(accessor.offset + accessor.view.offset));
-        else
-            glVertexAttribPointer(index, accessor.size, accessor.type, GL_FALSE, accessor.view.stride, reinterpret_cast<void *>(accessor.offset + accessor.view.offset));
-    };
+    std::vector<GLuint> alley_vaos;
+    for(const auto &mesh : alley_gltf_model.meshes)
+    {
+        GLuint vao;
+        glGenVertexArrays(1, &vao);
+        glBindVertexArray(vao);
 
-    std::vector<mesh> meshes;
-    for (auto const &mesh : alley_gltf_model.meshes) {
-        auto& result = meshes.emplace_back();
-        glGenVertexArrays(1, &result.vao);
-        glBindVertexArray(result.vao);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, alley_vbo);
-        result.indices = mesh.indices;
+
+        auto setup_attribute = [](int index, gltf_model::accessor const & accessor) {
+            glEnableVertexAttribArray(index);
+            glVertexAttribPointer(index, accessor.size, accessor.type, GL_FALSE, accessor.view.stride,
+                                  reinterpret_cast<void *>(accessor.offset + accessor.view.offset));
+        };
+
         setup_attribute(0, mesh.position);
         setup_attribute(1, mesh.tangent);
         setup_attribute(2, mesh.normal);
         setup_attribute(3, mesh.texcoord);
-        result.material = mesh.material;
+        alley_vaos.push_back(vao);
     }
 
-    for (auto const &mesh : meshes) {
+
+    for (auto const &mesh : alley_gltf_model.meshes) {
         if (!mesh.material.ambient_texture) continue;
         auto ambient_path = std::filesystem::path(alley_path).parent_path() / *mesh.material.ambient_texture;
         textures.load_texture(ambient_path);
@@ -196,9 +194,9 @@ int main() try {
             for (int j = 0; j <= 1; j++)
                 for (int k = 0; k <= 1; k++)
                     floor_bounding_box[it++] = {
-                        floor_spawn_position.x + (i - 0.5f) * floor_size.x,
-                        floor_spawn_position.y + (j - 0.5f) * floor_size.y,
-                        floor_spawn_position.z + (k - 0.5f) * floor_size.z};
+                        floor_spawn_position.x + ((float)i - 0.5f) * floor_size.x,
+                        floor_spawn_position.y + ((float)j - 0.5f) * floor_size.y,
+                        floor_spawn_position.z + ((float)k - 0.5f) * floor_size.z};
         floor_center = std::accumulate(floor_bounding_box.begin(), floor_bounding_box.end(), glm::vec3(0.f)) / 8.f;
     }
 
@@ -378,7 +376,6 @@ int main() try {
     glm::vec3 light_direction = glm::normalize(glm::vec3(3.f, 2.f, -3.f));
     bool played = false, debug = false;
 
-
     auto draw_obj = [bowling_color_location](
             std::vector<tinyobj::shape_t> &shapes,
             std::vector<tinyobj::material_t> &materials) {
@@ -391,10 +388,12 @@ int main() try {
         }
     };
 
-    auto draw_meshes = [&](bool transparent) {
-        for (auto const &mesh : meshes) {
+    auto draw_mesh = [&](bool transparent, int index) {
+            auto const &mesh = alley_gltf_model.meshes[index];
+
             if (mesh.material.transparent != transparent)
-                continue;
+                return;
+
             if (mesh.material.two_sided)
                 glDisable(GL_CULL_FACE);
             else
@@ -411,18 +410,17 @@ int main() try {
             } else if (mesh.material.color) {
                 glUniform1i(alley_use_texture_location, 0);
                 glUniform4fv(alley_color_location, 1, reinterpret_cast<const float *>(&(*mesh.material.color)));
-            } else continue;
+            } else return;
 
             auto normal_path = std::filesystem::path(alley_path).parent_path() / *mesh.material.normal_texture;
             glUniform1i(alley_normal_location, textures.get_texture(normal_path));
             auto roughness_path = std::filesystem::path(alley_path).parent_path() / *mesh.material.roughness_texture;
             glUniform1i(alley_roughness_location, textures.get_texture(roughness_path));
 
-            glBindVertexArray(mesh.vao);
+            glBindVertexArray(alley_vaos[index]);
 
             glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type,
                            reinterpret_cast<void *>(mesh.indices.offset + mesh.indices.view.offset));
-        }
     };
 
     while (true)
@@ -518,6 +516,7 @@ int main() try {
         glm::mat4 projection = glm::perspective(glm::pi<float>() / 3.f, 1.f / aspect, near, far);
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
 
+        frustum f(projection * view);
 
         glm::vec3 light_z = -light_direction;
         glm::vec3 light_x = glm::normalize(glm::cross(light_z, {0.f, 1.f, 0.f}));
@@ -538,12 +537,10 @@ int main() try {
             {floor_center.x, floor_center.y, floor_center.z, 1.f}
         }));
 
-
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, shadow_fbo);
         glViewport(0, 0, shadow_map_resolution, shadow_map_resolution);
         glClearColor(1.f, 1.f, 0.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
 
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
@@ -554,15 +551,12 @@ int main() try {
         glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&alley_model));
         glUniformMatrix4fv(shadow_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&shadow_transform));
 
-        draw_meshes(false);
+        for (int i = 0; i < alley_gltf_model.meshes.size(); i++)
+            draw_mesh(false, i);
         glDepthMask(GL_FALSE);
-        draw_meshes(true);
+        for (int i = 0; i < alley_gltf_model.meshes.size(); i++)
+            draw_mesh(true, i);
         glDepthMask(GL_TRUE);
-
-
-
-
-
 
         glBindVertexArray(ball_vao);
         glm::mat4 transform_model = ball_transform * ball_model;
@@ -576,15 +570,10 @@ int main() try {
             draw_obj(pin_shapes, pin_materials);
         }
 
-
-
-
-
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glViewport(0, 0, width, height);
         glClearColor(0.8f, 0.8f, 1.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
 
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
@@ -600,26 +589,34 @@ int main() try {
         glUniform1i(alley_shadow_map_location, 1);
         glUniformMatrix4fv(alley_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&shadow_transform));
 
-        draw_meshes(false);
+
+        for (int i = 0; i < alley_gltf_model.meshes.size(); i++) {
+            auto const &mesh = alley_gltf_model.meshes[i];
+            glm::vec3 min = (alley_model * glm::vec4(mesh.min, 1.0)).xyz();
+            glm::vec3 max = (alley_model * glm::vec4(mesh.max, 1.0)).xyz();
+            aabb box = aabb(min, max);
+            if (intersect(box, f))
+                draw_mesh(false, i);
+        }
         glDepthMask(GL_FALSE);
-        draw_meshes(true);
+        for (int i = 0; i < alley_gltf_model.meshes.size(); i++) {
+            auto const &mesh = alley_gltf_model.meshes[i];
+            glm::vec3 min = (alley_model * glm::vec4(mesh.min, 1.0)).xyz();
+            glm::vec3 max = (alley_model * glm::vec4(mesh.max, 1.0)).xyz();
+            aabb box = aabb(min, max);
+            if (intersect(box, f))
+                draw_mesh(true, i);
+        }
         glDepthMask(GL_TRUE);
 
         glUseProgram(bowling_program);
         glUniformMatrix4fv(bowling_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&ball_transform));
         glUniformMatrix4fv(bowling_view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(bowling_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
-
-
-
-
         glUniform3fv(bowling_light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
         glUniform3fv(bowling_camera_location, 1, reinterpret_cast<float *>(&camera_position));
         glUniform3f(bowling_light_color_location, 0.8f, 0.8f, 0.8f);
         glUniform1i(bowling_shadow_map_location, 1);
-
-
-
 
         glUniformMatrix4fv(bowling_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&ball_model));
         glBindVertexArray(ball_vao);
@@ -632,7 +629,6 @@ int main() try {
             glUniformMatrix4fv(bowling_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&pin_transforms[i]));
             draw_obj(pin_shapes, pin_materials);
         }
-
 
         if(debug) {
             auto lines = debugRenderer.getLines();

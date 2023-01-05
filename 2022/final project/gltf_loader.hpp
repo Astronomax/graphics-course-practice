@@ -81,6 +81,9 @@ struct gltf_model
         accessor tangent;
         accessor normal;
         accessor texcoord;
+
+        glm::vec3 min;
+        glm::vec3 max;
     };
 
     std::vector<char> buffer;
