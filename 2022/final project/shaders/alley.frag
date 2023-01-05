@@ -24,11 +24,12 @@ float diffuse(vec3 real_normal, vec3 direction) {
 }
 
 float specular(vec3 real_normal, vec3 direction) {
-    float roughness = texture(roughness_texture, texcoord).g;
+    float roughness = texture(roughness_texture, texcoord).r;
     float power = 1.0 / pow(roughness, 2.0) - 1.0;
     vec3 reflected_direction = 2.0 * real_normal * dot(real_normal, direction) - direction;
     vec3 camera_direction = normalize(camera_position - position);
-    return pow(max(0.0, dot(reflected_direction, camera_direction)), power);
+    float glossiness = 1.0;
+    return glossiness * pow(max(0.0, dot(reflected_direction, camera_direction)), power);
 }
 
 float phong(vec3 real_normal, vec3 direction) {

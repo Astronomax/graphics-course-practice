@@ -91,6 +91,9 @@ int main() try {
     const std::string pin_dir = project_root + "/pin/";
     const std::string pin_path = pin_dir + "pin.obj";
     const std::string alley_path = project_root + "/bowling_alley_mozilla_hubs_room/scene.gltf";
+    const std::string environment_path = project_root + "/textures/bowling.jpg";
+
+    textures.load_texture(environment_path);
 
     auto alley_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/alley.vert");
     auto alley_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/alley.frag");
@@ -366,15 +369,29 @@ int main() try {
     GLuint shadow_debug_vao;
     glGenVertexArrays(1, &shadow_debug_vao);
 
+
+    auto environment_vertex_shader = create_shader(GL_VERTEX_SHADER, project_root + "/shaders/environment.vert");
+    auto environment_fragment_shader = create_shader(GL_FRAGMENT_SHADER, project_root + "/shaders/environment.frag");
+    auto environment_program = create_program(environment_vertex_shader, environment_fragment_shader);
+
+    GLuint view_projection_inverse_location = glGetUniformLocation(environment_program, "view_projection_inverse");
+    GLuint environment_camera_position_location = glGetUniformLocation(environment_program, "camera_position");
+    GLuint environment_environment_map_texture_location = glGetUniformLocation(environment_program, "environment_map_texture");
+    GLuint environment_ambient_location = glGetUniformLocation(environment_program, "ambient");
+
+    GLuint environment_vao;
+    glGenVertexArrays(1, &environment_vao);
+
     auto last_frame_start = std::chrono::high_resolution_clock::now();
     std::map<SDL_Keycode, bool> button_down;
     float time = 0.f, accumulated_time = 0.f;
     float time_per_update = 1.f / 60.f;
     float camera_distance = 12.f;
     float camera_angle = glm::pi<float>();
-    float camera_elevation = glm::pi<float>() / 36.f;
+    float camera_elevation = glm::pi<float>() / 10.f;
     glm::vec3 light_direction = glm::normalize(glm::vec3(3.f, 2.f, -3.f));
     bool played = false, debug = false;
+    glm::vec3 ambient_color(0.6f);
 
     auto draw_obj = [bowling_color_location](
             std::vector<tinyobj::shape_t> &shapes,
@@ -517,6 +534,7 @@ int main() try {
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
 
         frustum f(projection * view);
+        glm::mat4 view_projection_inverse = inverse(projection * view);
 
         glm::vec3 light_z = -light_direction;
         glm::vec3 light_x = glm::normalize(glm::cross(light_z, {0.f, 1.f, 0.f}));
@@ -579,6 +597,19 @@ int main() try {
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
 
+        glUseProgram(environment_program);
+        glDisable(GL_DEPTH_TEST);
+        glUniformMatrix4fv(view_projection_inverse_location, 1, GL_FALSE, reinterpret_cast<float *>(&view_projection_inverse));
+        glUniform3fv(environment_camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
+        glUniform1i(environment_environment_map_texture_location, textures.get_texture(environment_path));
+        glUniform3fv(environment_ambient_location, 1, reinterpret_cast<float *>(&ambient_color));
+        glBindVertexArray(environment_vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+
         glUseProgram(alley_program);
         glUniformMatrix4fv(alley_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&alley_model));
         glUniformMatrix4fv(alley_view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
@@ -588,7 +619,6 @@ int main() try {
         glUniform3f(alley_light_color_location, 0.8f, 0.8f, 0.8f);
         glUniform1i(alley_shadow_map_location, 1);
         glUniformMatrix4fv(alley_transform_location, 1, GL_FALSE, reinterpret_cast<float *>(&shadow_transform));
-
 
         for (int i = 0; i < alley_gltf_model.meshes.size(); i++) {
             auto const &mesh = alley_gltf_model.meshes[i];
