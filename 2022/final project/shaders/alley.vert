@@ -16,8 +16,8 @@ out vec2 texcoord;
 
 void main() {
     gl_Position = projection * view * model * vec4(in_position, 1.0);
+    position = (model * vec4(in_position, 1.0)).xyz;
     tangent = mat3(model) * in_tangent;
-    normal = mat3(model) * in_normal;
-    position = mat3(model) * in_position;
+    normal = normalize(mat3(model) * in_normal);
     texcoord = in_texcoord;
 }

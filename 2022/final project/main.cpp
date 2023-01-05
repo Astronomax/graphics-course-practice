@@ -344,7 +344,7 @@ int main() try {
     GLint shadow_model_location = glGetUniformLocation(shadow_program, "model");
     GLint shadow_transform_location = glGetUniformLocation(shadow_program, "transform");
 
-    GLsizei shadow_map_resolution = 1024;
+    GLsizei shadow_map_resolution = 4096;
     GLuint shadow_map, shadow_render_buffer, shadow_fbo;
     glGenTextures(1, &shadow_map);
     glGenRenderbuffers(1, &shadow_render_buffer);

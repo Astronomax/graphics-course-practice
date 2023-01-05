@@ -3,7 +3,6 @@
 layout (location = 0) out vec4 out_color;
 
 in vec3 position;
-in vec2 tex_coord;
 
 void main() {
     float z = gl_FragCoord.z;
