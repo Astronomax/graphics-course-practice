@@ -38,6 +38,7 @@ struct gltf_model
         bool two_sided;
         bool transparent;
         std::optional<std::string> normal_texture;
+        std::optional<std::string> roughness_texture;
         std::optional<std::string> ambient_texture;
         std::optional<glm::vec4> color;
     };

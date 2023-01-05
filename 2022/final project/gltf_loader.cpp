@@ -111,6 +111,8 @@ gltf_model load_gltf(std::filesystem::path const & path)
             result_mesh.material.ambient_texture = parse_texture(pbr["baseColorTexture"]["index"].GetInt());
         else if (pbr.HasMember("baseColorFactor"))
             result_mesh.material.color = parse_color(pbr["baseColorFactor"].GetArray());
+
+        result_mesh.material.roughness_texture = parse_texture(pbr["metallicRoughnessTexture"]["index"].GetInt());
     }
     return result;
 }

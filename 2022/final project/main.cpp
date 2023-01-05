@@ -108,6 +108,10 @@ int main() try {
     GLuint alley_use_texture_location = glGetUniformLocation(alley_program, "use_texture");
     GLuint alley_light_direction_location = glGetUniformLocation(alley_program, "light_direction");
 
+    GLuint alley_camera_location = glGetUniformLocation(alley_program, "camera_position");
+    GLuint alley_roughness_location = glGetUniformLocation(alley_program, "roughness_texture");
+    GLuint alley_light_color_location = glGetUniformLocation(alley_program, "light_color");
+
     auto const alley_gltf_model = load_gltf(alley_path);
     GLuint alley_vbo;
     glGenBuffers(1, &alley_vbo);
@@ -142,6 +146,8 @@ int main() try {
         textures.load_texture(ambient_path);
         auto normal_path = std::filesystem::path(alley_path).parent_path() / *mesh.material.normal_texture;
         textures.load_texture(normal_path);
+        auto roughness_path = std::filesystem::path(alley_path).parent_path() / *mesh.material.roughness_texture;
+        textures.load_texture(roughness_path);
     }
 
     glm::mat4 alley_model = glm::mat4(1.f);
@@ -353,6 +359,8 @@ int main() try {
 
             auto normal_path = std::filesystem::path(alley_path).parent_path() / *mesh.material.normal_texture;
             glUniform1i(alley_normal_location, textures.get_texture(normal_path));
+            auto roughness_path = std::filesystem::path(alley_path).parent_path() / *mesh.material.roughness_texture;
+            glUniform1i(alley_roughness_location, textures.get_texture(roughness_path));
 
             glBindVertexArray(mesh.vao);
 
@@ -447,7 +455,9 @@ int main() try {
         glUniformMatrix4fv(alley_view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(alley_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(alley_light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
-        glUniform3f(alley_color_location, 0.8f, 0.8f, 0.8f);
+        glUniform3fv(alley_camera_location, 1, reinterpret_cast<float *>(&camera_position));
+        glUniform3f(alley_light_color_location, 0.8f, 0.8f, 0.8f);
+
 
         draw_meshes(false);
         glDepthMask(GL_FALSE);
