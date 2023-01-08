@@ -91,7 +91,7 @@ int main() try {
     const std::string pin_dir = project_root + "/pin/";
     const std::string pin_path = pin_dir + "pin.obj";
     const std::string alley_path = project_root + "/bowling_alley_mozilla_hubs_room/scene.gltf";
-    const std::string environment_path = project_root + "/textures/bowling.jpg";
+    const std::string environment_path = project_root + "/textures/bowling_game.jpg";
 
     textures.load_texture(environment_path);
 
@@ -394,7 +394,7 @@ int main() try {
     float camera_distance = 12.f;
     float camera_angle = glm::pi<float>();
     float camera_elevation = glm::pi<float>() / 10.f;
-    glm::vec3 light_direction = glm::normalize(glm::vec3(3.f, 2.f, -3.f));
+    glm::vec3 light_direction = glm::normalize(glm::vec3(-3.f, 10.f, 3.f));
     bool played = false, debug = false;
     glm::vec3 ambient_color(0.6f);
 

@@ -43,9 +43,9 @@ void main() {
     if (in_shadow_texture) {
         vec2 a = vec2(0.0, 0.0);
         float b = 0.0;
-        for (int x = -3; x <= 3; ++x) {
-            for (int y = -3; y <= 3; ++y) {
-                float k = exp(-(pow(x, 2) + pow(y, 2)) / 8.0);
+        for (int x = -5; x <= 5; ++x) {
+            for (int y = -5; y <= 5; ++y) {
+                float k = exp(-(pow(x, 2) + pow(y, 2)) / 50.0);
                 a += k * texture(shadow_map, shadow_pos.xy + vec2(x, y) / textureSize(shadow_map, 0).xy).rg;
                 b += k;
             }
@@ -54,7 +54,7 @@ void main() {
 
         float mu = data.r;
         float sigma = data.g - mu * mu;
-        float z = shadow_pos.z - 0.005;
+        float z = shadow_pos.z - 0.001;
         shadow_factor = (z < mu) ? 1.0 : sigma / (sigma + (z - mu) * (z - mu));
         float delt = 0.125;
         if(shadow_factor < delt)

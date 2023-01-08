@@ -24,11 +24,11 @@ float diffuse(vec3 real_normal, vec3 direction) {
 }
 
 float specular(vec3 real_normal, vec3 direction) {
-    float roughness = texture(roughness_texture, texcoord).r;
+    float roughness = texture(roughness_texture, texcoord).g;
     float power = 1.0 / pow(roughness, 2.0) - 1.0;
     vec3 reflected_direction = 2.0 * real_normal * dot(real_normal, direction) - direction;
     vec3 camera_direction = normalize(camera_position - position);
-    float glossiness = 1.0;
+    float glossiness = 3.0;
     return glossiness * pow(max(0.0, dot(reflected_direction, camera_direction)), power);
 }
 
@@ -56,7 +56,7 @@ void main() {
         float b = 0.0;
         for (int x = -3; x <= 3; ++x) {
             for (int y = -3; y <= 3; ++y) {
-                float k = exp(-(pow(x, 2) + pow(y, 2)) / 8.0);
+                float k = exp(-(pow(x, 2) + pow(y, 2)) / 18.0);
                 a += k * texture(shadow_map, shadow_pos.xy + vec2(x, y) / textureSize(shadow_map, 0).xy).rg;
                 b += k;
             }
@@ -65,7 +65,7 @@ void main() {
 
         float mu = data.r;
         float sigma = data.g - mu * mu;
-        float z = shadow_pos.z - 0.005;
+        float z = shadow_pos.z - 0.001;
         shadow_factor = (z < mu) ? 1.0 : sigma / (sigma + (z - mu) * (z - mu));
         float delt = 0.125;
         if(shadow_factor < delt)
@@ -77,11 +77,12 @@ void main() {
 
     vec4 albedo_color;
     if (use_texture == 1)
-    albedo_color = texture(albedo, texcoord);
+    albedo_color = texture(albedo, vec2(texcoord.x, texcoord.y));
     else
     albedo_color = color;
 
     float ambient = texture(roughness_texture, texcoord).r;
-    vec3 light = ambient + light_color * phong(real_normal, light_direction) * shadow_factor;
+    //float koef = texture(roughness_texture, texcoord).b;
+    vec3 light = vec3(ambient) + light_color * phong(real_normal, light_direction) * shadow_factor;
     out_color = vec4(albedo_color.rgb * light, albedo_color.a);
 }
